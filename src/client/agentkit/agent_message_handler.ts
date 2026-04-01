@@ -1,12 +1,12 @@
+import { ToolReturn } from '../../opentool';
 import {
   EventType,
-  FunctionNotSupportedError,
+  FunctionNotSupportedException,
   type AgentMessage,
   type AgentMessageChunk,
   type EventToolReturn,
   type FunctionCall,
-  type Tool,
-  type ToolReturn
+  type Tool
 } from '../../types';
 
 export abstract class AgentMessageHandler {
@@ -18,15 +18,15 @@ export abstract class AgentMessageHandler {
 
   async onFunctionCall(_sessionId: string, functionCall: FunctionCall): Promise<ToolReturn> {
     if (this.tool) {
-      return {
-        id: functionCall.id,
-        result: await this.tool.call(functionCall.name, functionCall.arguments)
-      };
+      return new ToolReturn(
+        functionCall.id,
+        await this.tool.call(functionCall.name, functionCall.arguments)
+      );
     }
-    return {
-      id: functionCall.id,
-      result: toToolErrorPayload(new FunctionNotSupportedError(functionCall.name))
-    };
+    return new ToolReturn(
+      functionCall.id,
+      toToolErrorPayload(new FunctionNotSupportedException(functionCall.name))
+    );
   }
 
   async onStreamFunctionCall(
@@ -39,32 +39,26 @@ export abstract class AgentMessageHandler {
         await this.tool.streamCall(functionCall.name, functionCall.arguments, (event, data) => {
           onToolReturn({
             event,
-            toolReturn: {
-              id: functionCall.id,
-              result: data
-            }
+            toolReturn: new ToolReturn(functionCall.id, data)
           });
         });
         return;
       } catch (error) {
         onToolReturn({
           event: EventType.ERROR,
-          toolReturn: {
-            id: functionCall.id,
-            result: {
-              error: String(error)
-            }
-          }
+          toolReturn: new ToolReturn(functionCall.id, {
+            error: String(error)
+          })
         });
         return;
       }
     }
     onToolReturn({
       event: EventType.ERROR,
-      toolReturn: {
-        id: functionCall.id,
-        result: toToolErrorPayload(new FunctionNotSupportedError(functionCall.name))
-      }
+      toolReturn: new ToolReturn(
+        functionCall.id,
+        toToolErrorPayload(new FunctionNotSupportedException(functionCall.name))
+      )
     });
   }
 
@@ -85,7 +79,7 @@ function toToolErrorPayload(error: { toJson?: () => Record<string, unknown>; toJ
     return error.toJSON();
   }
   return {
-    error: 'FunctionNotSupportedError',
+    error: 'FunctionNotSupportedException',
     message: String(error)
   };
 }

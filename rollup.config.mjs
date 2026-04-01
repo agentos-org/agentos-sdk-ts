@@ -7,6 +7,7 @@ const input = 'src/index.ts';
 export default [
   {
     input,
+    external: (id) => id === 'opentool-ts' || id.startsWith('opentool-ts/'),
     output: [
       {
         file: 'dist/index.js',
@@ -24,7 +25,14 @@ export default [
         format: 'umd',
         name: 'AgentOSSDK',
         sourcemap: true,
-        exports: 'named'
+        exports: 'named',
+        globals: {
+          'opentool-ts': 'OpenToolTS',
+          'opentool-ts/opentool-schema': 'OpenToolTS',
+          'opentool-ts/opentool-tool': 'OpenToolTS',
+          'opentool-ts/opentool-llm': 'OpenToolTS',
+          'opentool-ts/opentool-daemon': 'OpenToolTS'
+        }
       }
     ],
     plugins: [

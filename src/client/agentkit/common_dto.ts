@@ -1,3 +1,9 @@
+import type { FunctionCall, Tool, ToolReturn } from '../../opentool';
+import {
+  EventType,
+  FunctionNotSupportedException
+} from '../../opentool';
+
 export enum ApiKeyType {
   basic = 'basic',
   bearer = 'bearer',
@@ -36,56 +42,6 @@ export interface OpenSpec {
 export interface CallbackOpenTool {
   opentool: string;
   timeout?: number;
-}
-
-export interface FunctionCall {
-  id: string;
-  name: string;
-  arguments: Record<string, unknown>;
-  stream?: boolean;
-  isStream?: boolean;
-}
-
-export interface ToolReturn {
-  id: string;
-  result: Record<string, unknown>;
-}
-
-export class EventType {
-  static readonly START = 'start';
-  static readonly DATA = 'data';
-  static readonly ERROR = 'error';
-  static readonly DONE = 'done';
-}
-
-export interface Tool {
-  call(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>>;
-  streamCall?(
-    name: string,
-    args: Record<string, unknown>,
-    onEvent: (event: string, data: Record<string, unknown>) => void
-  ): Promise<void>;
-}
-
-export class FunctionNotSupportedError extends Error {
-  readonly code: number;
-
-  constructor(functionName: string) {
-    super(`Function Not Supported: ${functionName}`);
-    this.name = 'FunctionNotSupportedException';
-    this.code = 405;
-  }
-
-  toJson(): Record<string, unknown> {
-    return {
-      code: this.code,
-      message: this.message
-    };
-  }
-
-  toJSON(): Record<string, unknown> {
-    return this.toJson();
-  }
 }
 
 export class AgentRoleType {
@@ -130,3 +86,9 @@ export class AgentEventType {
   static readonly agentMessageChunk = 'agentmessagechunk';
   static readonly functionCall = 'functionCall';
 }
+
+export type { FunctionCall, Tool, ToolReturn };
+export {
+  EventType,
+  FunctionNotSupportedException
+};

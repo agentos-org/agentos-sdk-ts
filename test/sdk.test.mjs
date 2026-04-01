@@ -8,10 +8,14 @@ import {
   AgentOSSDK,
   AgentOSSubscribeConnectionStatus,
   CronKitClient,
-  EventType
+  DAEMON_DEFAULT_PREFIX,
+  EventType,
+  SchemaType
 } from '../dist/index.js';
 
 test('system, appkit, cronkit, llmkit, and toolkit flows work through the sdk', async () => {
+  assert.equal(typeof DAEMON_DEFAULT_PREFIX, 'string');
+  assert.equal(typeof SchemaType, 'function');
   const state = {
     registerCount: 0,
     lastCronCreateBody: null,
@@ -180,6 +184,7 @@ test('system, appkit, cronkit, llmkit, and toolkit flows work through the sdk', 
   assert.equal(tools[0].id, 'tool-1');
   const openTool = await sdk.toolkit.loadTool('tool-1');
   assert.equal(openTool.info.title, 'demo');
+  assert.equal(typeof openTool.toJson, 'function');
   const toolEvents = [];
   for await (const event of sdk.toolkit.subscribeToolEvents({ daemonApiKey: 'daemon-key' })) {
     toolEvents.push(event.type);

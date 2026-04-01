@@ -1,8 +1,5 @@
-import type {
-  OpenTool,
-  ToolDto,
-  ToolLifecycleEventDto
-} from './dto';
+import { OpenTool } from '../../opentool';
+import type { ToolDto, ToolLifecycleEventDto } from './dto';
 import {
   ApiClient,
   asJsonMap,
@@ -18,8 +15,9 @@ export class ToolKitClient {
     });
   }
 
-  loadTool(toolId: string): Promise<OpenTool | null> {
-    return this.apiClient.request<OpenTool | null>(`/toolkit/${toolId}/load`);
+  async loadTool(toolId: string): Promise<OpenTool | null> {
+    const response = await this.apiClient.request<Record<string, unknown> | null>(`/toolkit/${toolId}/load`);
+    return response ? OpenTool.fromJson(response) : null;
   }
 
   async *subscribeToolEvents(daemonApiKey: string, snapshot = true, signal?: AbortSignal): AsyncGenerator<ToolLifecycleEventDto> {

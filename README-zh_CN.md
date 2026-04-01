@@ -27,6 +27,24 @@ npm install agentos-sdk-ts
 import { AgentOSSDK } from 'agentos-sdk-ts';
 ```
 
+`agentos-sdk-ts` 也会直接导出 Dart SDK 对齐所需的 `opentool-ts` 能力，
+包括 `OpenTool`、schema 模型、daemon client 常量与类型、tool 异常以及
+LLM tool call 模型。
+
+```ts
+import {
+  AgentOSSDK,
+  DAEMON_DEFAULT_PREFIX,
+  DaemonClient,
+  EventType,
+  FunctionCall,
+  OpenTool,
+  OpenToolJsonLoader,
+  SchemaType,
+  ToolReturn
+} from 'agentos-sdk-ts';
+```
+
 ## 使用示例
 
 ```ts
@@ -215,8 +233,18 @@ new AgentOSSDK({
 | 方法 | 参数 | 说明 |
 | --- | --- | --- |
 | `listTool(all?)` | `all` | 从 `/toolkit/list` 获取当前可用 tools 列表。 |
-| `loadTool(toolId)` | `toolId` | 从 `/toolkit/{toolId}/load` 读取 `OpenTool` 定义。 |
+| `loadTool(toolId)` | `toolId` | 从 `/toolkit/{toolId}/load` 读取 `OpenTool` 定义，并返回 `OpenTool` 实例。 |
 | `subscribeToolEvents({ daemonApiKey, snapshot, signal })` | `daemonApiKey`、`snapshot`、`signal` | 订阅 `/toolkit/events`，持续接收 `ToolLifecycleEventDto` 生命周期事件。 |
+
+### OpenTool 导出
+
+包入口已经直接导出 AgentKit 和 ToolKit 所需的 OpenTool 符号，正常使用 SDK
+时不需要再单独引入第二份依赖。
+
+- Schema 导出：`DataType`、`FunctionModel`、`Info`、`OpenTool`、`OpenToolJsonLoader`、`Parameter`、`Return`、`Schema`、`SchemaType`、`SchemasSingleton`
+- Tool 导出：`EventType`、`FunctionNotSupportedException`、`InvalidArgumentsException`、`ToolBreakException`、`JsonParserException`
+- LLM tool call 导出：`FunctionCall`、`ToolReturn`
+- Daemon 导出：`DaemonClient`、`DAEMON_DEFAULT_PORT`、`DAEMON_DEFAULT_PREFIX`、`DaemonRegisterInfo`、`DaemonRegisterResult`
 
 ### AgentOSEventHandler
 
