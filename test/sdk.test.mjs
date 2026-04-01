@@ -8,10 +8,12 @@ import {
   AgentOSSDK,
   AgentOSSubscribeConnectionStatus,
   CronKitClient,
-  DAEMON_DEFAULT_PREFIX,
-  EventType,
-  SchemaType
+  EventType
 } from '../dist/index.js';
+import {
+  DAEMON_DEFAULT_PREFIX,
+  SchemaType
+} from '../dist/opentool.js';
 
 test('system, appkit, cronkit, llmkit, and toolkit flows work through the sdk', async () => {
   assert.equal(typeof DAEMON_DEFAULT_PREFIX, 'string');

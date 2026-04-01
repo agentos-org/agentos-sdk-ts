@@ -1,4 +1,4 @@
-export type { OpenTool } from '../../opentool';
+export type { OpenTool } from '../../browser_opentool';
 
 export interface ToolDto {
   id: string;

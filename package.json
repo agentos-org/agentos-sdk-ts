@@ -19,6 +19,18 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
+    },
+    "./opentool": {
+      "types": "./dist/opentool.d.ts",
+      "import": "./dist/opentool.js",
+      "require": "./dist/opentool.cjs",
+      "default": "./dist/opentool.js"
+    },
+    "./third_party": {
+      "types": "./dist/third_party.d.ts",
+      "import": "./dist/third_party.js",
+      "require": "./dist/third_party.cjs",
+      "default": "./dist/third_party.js"
     }
   },
   "files": [

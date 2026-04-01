@@ -1,4 +1,4 @@
-import { OpenTool } from '../../opentool';
+import { OpenTool } from '../../browser_opentool';
 import type { ToolDto, ToolLifecycleEventDto } from './dto';
 import {
   ApiClient,

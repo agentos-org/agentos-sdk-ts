@@ -2,7 +2,6 @@ export * from './types';
 export * from './utils';
 export * from './clients';
 export * from './sdk';
-export * from './third_party';
 export * from './client/shared/dto';
 export * from './client/systemkit/dto';
 export * from './client/systemkit/systemkit_client';

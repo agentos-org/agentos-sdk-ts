@@ -1,8 +1,9 @@
-import type { FunctionCall, Tool, ToolReturn } from '../../opentool';
+import type { FunctionCall, Tool } from '../../browser_opentool';
 import {
   EventType,
-  FunctionNotSupportedException
-} from '../../opentool';
+  FunctionNotSupportedException,
+  ToolReturn
+} from '../../browser_opentool';
 
 export enum ApiKeyType {
   basic = 'basic',

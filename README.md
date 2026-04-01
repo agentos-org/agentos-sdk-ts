@@ -27,22 +27,24 @@ Use a single public import:
 import { AgentOSSDK } from 'agentos-sdk-ts';
 ```
 
-`agentos-sdk-ts` also re-exports the `opentool-ts` types used by the Dart SDK
-surface, including `OpenTool`, schema models, daemon client symbols, tool
-exceptions, and LLM tool call models.
+The package root is browser-safe. Node-only OpenTool and daemon exports now live
+under explicit subpaths.
 
 ```ts
 import {
   AgentOSSDK,
+  EventType
+} from 'agentos-sdk-ts';
+
+import {
   DAEMON_DEFAULT_PREFIX,
   DaemonClient,
-  EventType,
   FunctionCall,
   OpenTool,
   OpenToolJsonLoader,
   SchemaType,
   ToolReturn
-} from 'agentos-sdk-ts';
+} from 'agentos-sdk-ts/opentool';
 ```
 
 ## Usage
@@ -236,15 +238,13 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 | `loadTool(toolId)` | `toolId` | Loads an `OpenTool` definition from `/toolkit/{toolId}/load` and returns an `OpenTool` instance. |
 | `subscribeToolEvents({ daemonApiKey, snapshot, signal })` | `daemonApiKey`, `snapshot`, `signal` | Subscribes to `/toolkit/events` and streams `ToolLifecycleEventDto` updates. |
 
-### OpenTool Re-exports
+### OpenTool Exports
 
-The package re-exports the OpenTool symbols used by AgentKit and ToolKit so you
-do not need a second direct dependency for normal SDK usage.
+The package root stays browser-safe. Import full `opentool-ts` re-exports from
+explicit Node-only subpaths:
 
-- Schema exports: `DataType`, `FunctionModel`, `Info`, `OpenTool`, `OpenToolJsonLoader`, `Parameter`, `Return`, `Schema`, `SchemaType`, `SchemasSingleton`
-- Tool exports: `EventType`, `FunctionNotSupportedException`, `InvalidArgumentsException`, `ToolBreakException`, `JsonParserException`
-- LLM tool-call exports: `FunctionCall`, `ToolReturn`
-- Daemon exports: `DaemonClient`, `DAEMON_DEFAULT_PORT`, `DAEMON_DEFAULT_PREFIX`, `DaemonRegisterInfo`, `DaemonRegisterResult`
+- `agentos-sdk-ts/opentool`
+- `agentos-sdk-ts/third_party`
 
 ### AgentOSEventHandler
 

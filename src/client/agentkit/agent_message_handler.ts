@@ -1,4 +1,4 @@
-import { ToolReturn } from '../../opentool';
+import { ToolReturn } from '../../browser_opentool';
 import {
   EventType,
   FunctionNotSupportedException,
