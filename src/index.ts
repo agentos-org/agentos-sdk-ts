@@ -22,5 +22,7 @@ export * from './client/agentos/agentos_event_handler';
 export * from './client/agentos/agentos_sdk';
 export * from './client/llmkit/dto';
 export * from './client/llmkit/llmkit_client';
+export * from './client/modelkit/dto';
+export * from './client/modelkit/modelkit_client';
 export * from './client/toolkit/dto';
 export * from './client/toolkit/toolkit_client';

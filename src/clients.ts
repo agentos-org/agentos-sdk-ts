@@ -3,4 +3,5 @@ export * from './client/appkit/appkit_client';
 export * from './client/agentkit/agentkit_client';
 export * from './client/cronkit/cronkit_client';
 export * from './client/llmkit/llmkit_client';
+export * from './client/modelkit/modelkit_client';
 export * from './client/toolkit/toolkit_client';
