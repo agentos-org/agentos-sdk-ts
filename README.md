@@ -1,8 +1,13 @@
 # AgentOS SDK for TypeScript
 
 A lightweight TypeScript SDK for the AgentOS API, supporting Root, AgentKit, AppKit,
-CronKit, LlmKit chat, and ToolKit discovery endpoints. Use the unified
+CronKit, ModelKit, and ToolKit discovery endpoints. Use the unified
 `AgentOSSDK` to avoid managing tokens manually.
+
+> **Deprecation notice:** `LlmKit` (`sdk.llmkit`) is deprecated in favour of
+> `ModelKit` (`sdk.modelkit`). The legacy module is kept for backward
+> compatibility, routes through the same upstream service, and will be removed
+> in a future release. Migrate `sdk.llmkit.*` calls to `sdk.modelkit.*`.
 
 ## Features
 
@@ -10,7 +15,10 @@ CronKit, LlmKit chat, and ToolKit discovery endpoints. Use the unified
 - AgentKit API: agent CRUD, session init, chat stream/simple, history, stop/clear, callbacks
 - AppKit API: bundle registration and SSE subscription
 - CronKit API: cron task CRUD, run history, and scheduler control
-- LlmKit API: model listing and OpenAI-compatible chat client at `/llmkit/text/chat/completions`
+- ModelKit API: task-oriented model listing and OpenAI-compatible chat /
+  embedding / asr / tts clients under `/modelkit/*`
+- LlmKit API (**deprecated**, use ModelKit): model listing and
+  OpenAI-compatible chat client at `/llmkit/text/chat/completions`
 - ToolKit API: tool listing, tool definition loading, and tool lifecycle event subscription
 
 ## Getting Started
@@ -108,19 +116,22 @@ const sdk = new AgentOSSDK({
 });
 ```
 
-### Use LlmKit Chat
+### Use ModelKit Chat
 
 `agentos-sdk-ts` accepts OpenAI-compatible chat payloads directly.
 
 ```ts
-import { AgentOSSDK } from 'agentos-sdk-ts';
+import { AgentOSSDK, ModelTask } from 'agentos-sdk-ts';
 
 const sdk = new AgentOSSDK({ baseUrl: 'http://localhost:8888' });
 
-const models = await sdk.llmkit.listModels();
+const models = await sdk.modelkit.listModels();
 console.log(models.map((model) => model.alias));
 
-const completion = await sdk.llmkit.chat.create({
+// Optionally filter by task (chat / embedding / asr / tts).
+const chatModels = await sdk.modelkit.listModelsByTask(ModelTask.chat);
+
+const completion = await sdk.modelkit.chat.create({
   model: 'qwen3-1.7b',
   messages: [
     {
@@ -132,6 +143,10 @@ const completion = await sdk.llmkit.chat.create({
 
 console.log(completion.choices?.[0]?.message?.content);
 ```
+
+> **Deprecated:** `sdk.llmkit.listModels()` / `sdk.llmkit.chat.create(...)`
+> still work for backward compatibility but emit deprecation warnings. Replace
+> them with the `sdk.modelkit` equivalents shown above.
 
 ## API Reference
 
@@ -157,7 +172,8 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 | `agentos` | `AgentOSModule` | Root/AppKit endpoints with internal token handling. |
 | `agentkit` | `AgentKitModule` | AgentKit endpoints with internal token handling. |
 | `cronkit` | `CronKitModule` | CronKit task management endpoints with internal token handling. |
-| `llmkit` | `LlmKitModule` | LlmKit model listing and preconfigured chat client. |
+| `modelkit` | `ModelKitModule` | ModelKit task-oriented model listing and chat / embedding / asr / tts clients. |
+| `llmkit` | `LlmKitModule` | **Deprecated** (use `modelkit`). LlmKit model listing and preconfigured chat client. |
 | `toolkit` | `ToolKitModule` | ToolKit discovery endpoints and tool lifecycle event subscription. |
 | `dispose()` | `Promise<void>` | Releases SDK resources and cancels active AppKit subscription. |
 
@@ -223,7 +239,21 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 | `callback({ sessionId, toolReturn })` | `sessionId`, `toolReturn` | Sends tool callback results. |
 | `streamCallback({ sessionId, eventToolReturn })` | `sessionId`, `eventToolReturn` | Sends streaming tool callback results. |
 
-### LlmKitModule (`sdk.llmkit`)
+### ModelKitModule (`sdk.modelkit`)
+
+| Method/Property | Type | Description |
+| --- | --- | --- |
+| `listModels()` | `Promise<ModelInfo[]>` | Fetches available models from `/modelkit/models`. |
+| `listModelsByTask(task)` | `Promise<ModelInfo[]>` | Filters models by `ModelTask` (`chat` / `embedding` / `asr` / `tts`). |
+| `chat` | `ModelKitChatClient` | OpenAI-compatible chat client using `{baseUrl}/modelkit/chat`. |
+| `embedding` | `ModelKitEmbeddingClient` | OpenAI-compatible embeddings client under `/modelkit/embedding`. |
+| `asr` | `ModelKitAsrClient` | Speech-to-text client under `/modelkit/asr`. |
+| `tts` | `ModelKitTtsClient` | Text-to-speech client under `/modelkit/tts`. |
+
+### LlmKitModule (`sdk.llmkit`) — Deprecated
+
+> **Deprecated:** use [`ModelKitModule`](#modelkitmodule-sdkmodelkit) instead.
+> Kept for backward compatibility only.
 
 | Method/Property | Type | Description |
 | --- | --- | --- |
@@ -335,7 +365,7 @@ class MyHandler extends AgentMessageHandler {
 ## Notes
 
 - Call `agentos.registerBundle(...)` before using token-protected APIs.
-- `sdk.llmkit.chat.createStream(...)` yields parsed SSE JSON frames until `[DONE]`.
+- `sdk.modelkit.chat.createStream(...)` yields parsed SSE JSON frames until `[DONE]` (the deprecated `sdk.llmkit.chat.createStream(...)` behaves the same).
 - `sdk.toolkit.subscribeToolEvents(...)` requires a daemon API key.
 - External integrations should only import from `agentos-sdk-ts`.
 

@@ -1,8 +1,12 @@
 # AgentOS SDK for TypeScript
 
 一个轻量的 TypeScript SDK，用于访问 AgentOS API，支持 Root、AgentKit、AppKit、
-CronKit、LlmKit chat 和 ToolKit 发现接口。推荐使用统一的 `AgentOSSDK`，
+CronKit、ModelKit 和 ToolKit 发现接口。推荐使用统一的 `AgentOSSDK`，
 无需手动管理 token。
+
+> **弃用提示：** `LlmKit`（`sdk.llmkit`）已弃用，请改用 `ModelKit`
+> （`sdk.modelkit`）。旧模块仅为向后兼容保留，底层指向同一服务，将在未来版本
+> 中移除。请将 `sdk.llmkit.*` 调用迁移到 `sdk.modelkit.*`。
 
 ## 功能
 
@@ -10,7 +14,10 @@ CronKit、LlmKit chat 和 ToolKit 发现接口。推荐使用统一的 `AgentOSS
 - AgentKit API：Agent CRUD、会话初始化、chat 流式/单次、历史记录、stop/clear、回调
 - AppKit API：bundle 注册与 SSE 订阅
 - CronKit API：定时任务 CRUD、运行记录与调度器控制
-- LlmKit API：模型列表与指向 `/llmkit/text/chat/completions` 的 OpenAI 兼容 chat 客户端
+- ModelKit API：基于任务的模型列表，以及 `/modelkit/*` 下的 OpenAI 兼容
+  chat / embedding / asr / tts 客户端
+- LlmKit API（**已弃用**，请改用 ModelKit）：模型列表与指向
+  `/llmkit/text/chat/completions` 的 OpenAI 兼容 chat 客户端
 - ToolKit API：tool 列表、tool 定义读取与 tool 生命周期事件订阅
 
 ## 快速开始
@@ -107,19 +114,22 @@ const sdk = new AgentOSSDK({
 });
 ```
 
-### 使用 LlmKit Chat
+### 使用 ModelKit Chat
 
 `agentos-sdk-ts` 直接接受 OpenAI 兼容的 chat 请求结构。
 
 ```ts
-import { AgentOSSDK } from 'agentos-sdk-ts';
+import { AgentOSSDK, ModelTask } from 'agentos-sdk-ts';
 
 const sdk = new AgentOSSDK({ baseUrl: 'http://localhost:8888' });
 
-const models = await sdk.llmkit.listModels();
+const models = await sdk.modelkit.listModels();
 console.log(models.map((model) => model.alias));
 
-const completion = await sdk.llmkit.chat.create({
+// 可按任务（chat / embedding / asr / tts）过滤。
+const chatModels = await sdk.modelkit.listModelsByTask(ModelTask.chat);
+
+const completion = await sdk.modelkit.chat.create({
   model: 'qwen3-1.7b',
   messages: [
     {
@@ -131,6 +141,9 @@ const completion = await sdk.llmkit.chat.create({
 
 console.log(completion.choices?.[0]?.message?.content);
 ```
+
+> **已弃用：** `sdk.llmkit.listModels()` / `sdk.llmkit.chat.create(...)` 仍可
+> 向后兼容使用，但会产生弃用警告。请替换为上述 `sdk.modelkit` 等价调用。
 
 ## API 参考
 
@@ -156,7 +169,8 @@ new AgentOSSDK({
 | `agentos` | `AgentOSModule` | Root/AppKit 相关接口，内部处理 token。 |
 | `agentkit` | `AgentKitModule` | AgentKit 相关接口，内部处理 token。 |
 | `cronkit` | `CronKitModule` | CronKit 任务管理接口，内部处理 token。 |
-| `llmkit` | `LlmKitModule` | LlmKit 模型列表与预配置 chat 客户端。 |
+| `modelkit` | `ModelKitModule` | ModelKit 基于任务的模型列表与 chat / embedding / asr / tts 客户端。 |
+| `llmkit` | `LlmKitModule` | **已弃用**（请改用 `modelkit`）。LlmKit 模型列表与预配置 chat 客户端。 |
 | `toolkit` | `ToolKitModule` | ToolKit 发现接口与 tool 生命周期事件订阅。 |
 | `dispose()` | `Promise<void>` | 释放 SDK 资源并取消当前 AppKit 订阅。 |
 
@@ -222,7 +236,20 @@ new AgentOSSDK({
 | `callback({ sessionId, toolReturn })` | `sessionId`、`toolReturn` | 发送工具回调结果。 |
 | `streamCallback({ sessionId, eventToolReturn })` | `sessionId`、`eventToolReturn` | 发送流式工具回调结果。 |
 
-### LlmKitModule（`sdk.llmkit`）
+### ModelKitModule（`sdk.modelkit`）
+
+| 方法/属性 | 类型 | 说明 |
+| --- | --- | --- |
+| `listModels()` | `Promise<ModelInfo[]>` | 从 `/modelkit/models` 获取可用模型列表。 |
+| `listModelsByTask(task)` | `Promise<ModelInfo[]>` | 按 `ModelTask`（`chat` / `embedding` / `asr` / `tts`）过滤模型。 |
+| `chat` | `ModelKitChatClient` | OpenAI 兼容 chat 客户端，使用 `{baseUrl}/modelkit/chat`。 |
+| `embedding` | `ModelKitEmbeddingClient` | `/modelkit/embedding` 下的 OpenAI 兼容 embeddings 客户端。 |
+| `asr` | `ModelKitAsrClient` | `/modelkit/asr` 下的语音转文字客户端。 |
+| `tts` | `ModelKitTtsClient` | `/modelkit/tts` 下的文字转语音客户端。 |
+
+### LlmKitModule（`sdk.llmkit`）—— 已弃用
+
+> **已弃用：** 请改用 [`ModelKitModule`](#modelkitmodulesdkmodelkit)。仅为向后兼容保留。
 
 | 方法/属性 | 类型 | 说明 |
 | --- | --- | --- |
@@ -333,7 +360,7 @@ class MyHandler extends AgentMessageHandler {
 ## 说明
 
 - 调用受 token 保护的 API 前，先执行 `agentos.registerBundle(...)`。
-- `sdk.llmkit.chat.createStream(...)` 会持续产出解析后的 SSE JSON，直到收到 `[DONE]`。
+- `sdk.modelkit.chat.createStream(...)` 会持续产出解析后的 SSE JSON，直到收到 `[DONE]`（已弃用的 `sdk.llmkit.chat.createStream(...)` 行为相同）。
 - `sdk.toolkit.subscribeToolEvents(...)` 需要 daemon API key。
 - 外部集成应只从 `agentos-sdk-ts` 导入。
 

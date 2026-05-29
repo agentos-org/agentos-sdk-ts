@@ -42,15 +42,15 @@ async function main() {
   await sdk.agentos.subscribe(new DemoEventHandler());
 
   /// HTTP:
-  /// GET http://localhost:8888/llmkit/models
-  const models = await sdk.llmkit.listModels();
+  /// GET http://localhost:8888/modelkit/models
+  const models = await sdk.modelkit.listModels();
   console.log(
-    `Available llmkit models: ${models.map((model) => `${model.alias}(${model.category})`).join(', ')}`
+    `Available modelkit models: ${models.map((model) => `${model.alias}(${model.task})`).join(', ')}`
   );
 
   /// HTTP:
-  /// POST http://localhost:8888/llmkit/text/chat/completions
-  const chatCompletion = await sdk.llmkit.chat.create({
+  /// POST http://localhost:8888/modelkit/chat/v1/chat/completions
+  const chatCompletion = await sdk.modelkit.chat.create({
     model: llmModel,
     messages: [
       {
