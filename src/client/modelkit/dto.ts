@@ -1,6 +1,6 @@
 /**
  * Task-oriented model classifier shared with the agentos-api ModelKit
- * controller. Replaces the legacy IO-shape based `LlmModelCategory`.
+ * controller.
  *
  * Declared as a string union (instead of a TypeScript enum) so callers can
  * pass string literals without importing an extra symbol.

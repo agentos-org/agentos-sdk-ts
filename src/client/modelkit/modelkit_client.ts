@@ -110,10 +110,9 @@ export class ModelKitAsrClient {
 /**
  * Task-oriented ModelKit client.
  *
- * Unlike the legacy `LlmKitClient`, this client splits requests by task
- * (chat / embedding / asr / tts) to match the agentos-api gateway routes, and
- * encodes vision support via `capabilities.vision` rather than a separate
- * task.
+ * Splits requests by task (chat / embedding / asr / tts) to match the
+ * agentos-api gateway routes, and encodes vision support via
+ * `capabilities.vision` rather than a separate task.
  */
 export class ModelKitClient {
   readonly chat: ModelKitChatClient;

@@ -9,5 +9,4 @@ export * from './client/agentkit/planning_dto';
 export * from './client/agentkit/sessions_dto';
 export * from './client/agentkit/messages_dto';
 export * from './client/cronkit/dto';
-export * from './client/llmkit/dto';
 export * from './client/toolkit/dto';

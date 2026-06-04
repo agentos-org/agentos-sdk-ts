@@ -25,7 +25,6 @@ import { AgentOSEventHandler } from './agentos_event_handler';
 import { AgentKitClient } from '../agentkit/agentkit_client';
 import { AppKitClient } from '../appkit/appkit_client';
 import { CronKitClient } from '../cronkit/cronkit_client';
-import { LlmKitClient } from '../llmkit/llmkit_client';
 import { ModelKitClient } from '../modelkit/modelkit_client';
 import { ModelTask } from '../modelkit/dto';
 import { SystemKitClient } from '../systemkit/systemkit_client';
@@ -60,7 +59,6 @@ export class AgentOSSDK {
   readonly agentos: AgentOSModule;
   readonly agentkit: AgentKitModule;
   readonly cronkit: CronKitModule;
-  readonly llmkit: LlmKitModule;
   readonly modelkit: ModelKitModule;
   readonly toolkit: ToolKitModule;
 
@@ -68,7 +66,6 @@ export class AgentOSSDK {
   readonly agentKit: AgentKitClient;
   readonly appKit: AppKitClient;
   readonly cronKit: CronKitClient;
-  readonly llmKit: LlmKitClient;
   readonly modelKit: ModelKitClient;
   readonly toolKit: ToolKitClient;
   readonly appTokens = new Map<string, string>();
@@ -105,13 +102,11 @@ export class AgentOSSDK {
     this.agentKit = new AgentKitClient(this.apiClient);
     this.appKit = new AppKitClient(this.apiClient);
     this.cronKit = new CronKitClient(this.apiClient);
-    this.llmKit = new LlmKitClient(this.apiClient);
     this.modelKit = new ModelKitClient(this.apiClient);
     this.toolKit = new ToolKitClient(this.apiClient);
     this.agentos = new AgentOSModule(this);
     this.agentkit = new AgentKitModule(this);
     this.cronkit = new CronKitModule(this);
-    this.llmkit = new LlmKitModule(this);
     this.modelkit = new ModelKitModule(this);
     this.toolkit = new ToolKitModule(this);
   }
@@ -607,24 +602,8 @@ export class AgentKitModule {
   }
 }
 
-export class LlmKitModule {
-  constructor(private readonly client: AgentOSSDK) {}
-
-  get chat() {
-    return this.client.llmKit.chat;
-  }
-
-  listModels() {
-    return this.client.llmKit.listModels();
-  }
-}
-
 /**
  * Entry point for the task-oriented ModelKit API (chat / embedding / asr / tts).
- *
- * New code should prefer `modelkit` over the legacy `llmkit` module, which is
- * kept for backward compatibility and routes through the same upstream
- * service.
  */
 export class ModelKitModule {
   constructor(private readonly client: AgentOSSDK) {}

@@ -15,14 +15,14 @@ import {
   SchemaType
 } from '../dist/opentool.js';
 
-test('system, appkit, cronkit, llmkit, and toolkit flows work through the sdk', async () => {
+test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk', async () => {
   assert.equal(typeof DAEMON_DEFAULT_PREFIX, 'string');
   assert.equal(typeof SchemaType, 'function');
   const state = {
     registerCount: 0,
     lastCronCreateBody: null,
     lastToolkitHeaders: null,
-    lastLlmBody: null
+    lastModelBody: null
   };
   const sdk = new AgentOSSDK({
     baseUrl: 'http://example.local:8888/base',
@@ -73,19 +73,19 @@ test('system, appkit, cronkit, llmkit, and toolkit flows work through the sdk', 
           spec: request.body.spec
         });
       }
-      if (request.pathname === '/base/llmkit/models') {
+      if (request.pathname === '/base/modelkit/models') {
         return jsonResponse([
           {
             id: 'model-1',
             name: 'Qwen',
             alias: 'qwen3-1.7b',
-            type: 'text',
+            task: 'chat',
             contextWindowSize: 32768
           }
         ]);
       }
-      if (request.pathname === '/base/llmkit/text/chat/completions') {
-        state.lastLlmBody = request.body;
+      if (request.pathname === '/base/modelkit/chat/v1/chat/completions') {
+        state.lastModelBody = request.body;
         return jsonResponse({
           id: 'chatcmpl-1',
           choices: [
@@ -167,20 +167,20 @@ test('system, appkit, cronkit, llmkit, and toolkit flows work through the sdk', 
   assert.equal(state.lastCronCreateBody.concurrency, 'skipIfRunning');
   assert.equal(state.lastCronCreateBody.enabled, true);
 
-  const models = await sdk.llmkit.listModels();
-  assert.equal(models[0].supportsTextInference, true);
-  assert.equal(models[0].isVisionLanguage, false);
-  assert.equal(sdk.llmkit.chat.baseUrl, 'http://example.local:8888/base/llmkit/text');
+  const models = await sdk.modelkit.listModels();
+  assert.equal(models[0].task, 'chat');
+  assert.equal(models[0].capabilities.vision, false);
+  assert.equal(sdk.modelkit.chat.baseUrl, 'http://example.local:8888/base/modelkit/chat');
 
-  const completion = await sdk.llmkit.chat.create({
+  const completion = await sdk.modelkit.chat.create({
     model: 'qwen3-1.7b',
     messages: [{ role: 'user', content: 'hello' }],
     maxTokens: 128,
     toolChoice: 'auto'
   });
   assert.equal(completion.choices[0].message.content, 'hello');
-  assert.equal(state.lastLlmBody.max_tokens, 128);
-  assert.equal(state.lastLlmBody.tool_choice, 'auto');
+  assert.equal(state.lastModelBody.max_tokens, 128);
+  assert.equal(state.lastModelBody.tool_choice, 'auto');
 
   const tools = await sdk.toolkit.listTool();
   assert.equal(tools[0].id, 'tool-1');
@@ -197,9 +197,9 @@ test('system, appkit, cronkit, llmkit, and toolkit flows work through the sdk', 
   await sdk.dispose();
 });
 
-test('llmkit chat sends the caller-provided model identifier unchanged', async () => {
+test('modelkit chat sends the caller-provided model identifier unchanged', async () => {
   const state = {
-    lastLlmBody: null
+    lastModelBody: null
   };
   const sdk = new AgentOSSDK({
     baseUrl: 'http://example.local:8888',
@@ -207,8 +207,8 @@ test('llmkit chat sends the caller-provided model identifier unchanged', async (
       if (request.pathname === '/appkit/register') {
         return jsonResponse({ token: 'token-1' });
       }
-      if (request.pathname === '/llmkit/text/chat/completions') {
-        state.lastLlmBody = request.body;
+      if (request.pathname === '/modelkit/chat/v1/chat/completions') {
+        state.lastModelBody = request.body;
         return jsonResponse({
           id: 'chatcmpl-1',
           choices: [
@@ -225,12 +225,12 @@ test('llmkit chat sends the caller-provided model identifier unchanged', async (
     })
   });
 
-  await sdk.llmkit.chat.create({
+  await sdk.modelkit.chat.create({
     model: 'remote-gpt',
     messages: [{ role: 'user', content: 'hello' }]
   });
 
-  assert.equal(state.lastLlmBody.model, 'remote-gpt');
+  assert.equal(state.lastModelBody.model, 'remote-gpt');
 });
 
 test('agentkit routes function calls to callback and streamCallback', async () => {
@@ -526,10 +526,10 @@ test('agentkit normalizes llmConfig defaults and legacy alias fields in outgoing
   assert.equal(captured.chatBody.llmConfig.supportsReasoning, true);
 });
 
-test('llmkit chat stream yields parsed events until done', async () => {
+test('modelkit chat stream yields parsed events until done', async () => {
   const sdk = new AgentOSSDK({
     fetch: createMockFetch((request) => {
-      if (request.pathname === '/llmkit/text/chat/completions') {
+      if (request.pathname === '/modelkit/chat/v1/chat/completions') {
         assert.equal(request.body.stream, true);
         return sseResponse([
           'data: {"id":"chunk-1","choices":[{"delta":{"content":"hel"}}]}\n\n',
@@ -542,7 +542,7 @@ test('llmkit chat stream yields parsed events until done', async () => {
   });
 
   const chunks = [];
-  for await (const chunk of sdk.llmkit.chat.createStream({
+  for await (const chunk of sdk.modelkit.chat.createStream({
     model: 'qwen3-1.7b',
     messages: [{ role: 'user', content: 'hello' }]
   })) {
@@ -552,10 +552,10 @@ test('llmkit chat stream yields parsed events until done', async () => {
   assert.deepEqual(chunks, ['chunk-1', 'chunk-2']);
 });
 
-test('llmkit remote function stream yields parsed events until done', async () => {
+test('modelkit remote function stream yields parsed events until done', async () => {
   const sdk = new AgentOSSDK({
     fetch: createMockFetch((request) => {
-      if (request.pathname === '/llmkit/text/chat/completions') {
+      if (request.pathname === '/modelkit/chat/v1/chat/completions') {
         assert.equal(request.body.stream, true);
         return sseResponse([
           'data: {"id":"rf-1","choices":[{"delta":{"content":"tool"}}]}\n\n',
@@ -568,7 +568,7 @@ test('llmkit remote function stream yields parsed events until done', async () =
   });
 
   const chunks = [];
-  for await (const chunk of sdk.llmkit.chat.createRemoteFunctionStream({
+  for await (const chunk of sdk.modelkit.chat.createRemoteFunctionStream({
     model: 'qwen3-1.7b',
     messages: [{ role: 'user', content: 'hello' }]
   })) {
@@ -578,11 +578,11 @@ test('llmkit remote function stream yields parsed events until done', async () =
   assert.deepEqual(chunks, ['rf-1', 'rf-2']);
 });
 
-test('llmkit chat serializes advanced request fields with OpenAI-style names', async () => {
+test('modelkit chat serializes advanced request fields with OpenAI-style names', async () => {
   let capturedBody = null;
   const sdk = new AgentOSSDK({
     fetch: createMockFetch((request) => {
-      if (request.pathname === '/llmkit/text/chat/completions') {
+      if (request.pathname === '/modelkit/chat/v1/chat/completions') {
         capturedBody = request.body;
         return jsonResponse({ id: 'chatcmpl-1', choices: [] });
       }
@@ -590,7 +590,7 @@ test('llmkit chat serializes advanced request fields with OpenAI-style names', a
     })
   });
 
-  await sdk.llmkit.chat.create({
+  await sdk.modelkit.chat.create({
     model: 'gpt-4.1',
     messages: [{ role: 'user', content: 'hello' }],
     logitBias: { 42: 1 },
@@ -609,16 +609,16 @@ test('llmkit chat serializes advanced request fields with OpenAI-style names', a
   assert.equal('enableThinking' in capturedBody, false);
 });
 
-test('llmkit listModels classifies text, vision, and remote models', async () => {
+test('modelkit listModels normalizes task, capabilities, and remote flags', async () => {
   const sdk = new AgentOSSDK({
     fetch: createMockFetch((request) => {
-      if (request.pathname === '/llmkit/models') {
+      if (request.pathname === '/modelkit/models') {
         return jsonResponse([
           {
             id: 'qwen3-8b',
             name: 'Qwen3 8B',
             alias: 'qwen3-8b',
-            type: 'textGeneration',
+            task: 'chat',
             contextWindowSize: 8192,
             isRemote: false,
             isCustom: false
@@ -627,14 +627,16 @@ test('llmkit listModels classifies text, vision, and remote models', async () =>
             id: 'qwen2.5-vl-7b',
             name: 'Qwen2.5 VL 7B',
             alias: 'qwen2.5-vl-7b',
-            type: 'image_text_to_text',
+            task: 'chat',
+            input: ['text', 'image'],
+            capabilities: { vision: true },
             contextWindowSize: 32768
           },
           {
-            id: 'remote-gpt',
-            name: 'gpt-4.1',
-            alias: 'gpt-4.1',
-            type: 'text',
+            id: 'embed-1',
+            name: 'Embedder',
+            alias: 'embed-1',
+            task: 'embedding',
             isRemote: true,
             isCustom: true
           }
@@ -644,19 +646,22 @@ test('llmkit listModels classifies text, vision, and remote models', async () =>
     })
   });
 
-  const models = await sdk.llmkit.listModels();
+  const models = await sdk.modelkit.listModels();
 
   assert.equal(models.length, 3);
   assert.equal(models[0].id, 'qwen3-8b');
-  assert.equal(models[0].type, 'textGeneration');
-  assert.equal(models[0].category, 'textGeneration');
-  assert.equal(models[0].supportsTextInference, true);
+  assert.equal(models[0].task, 'chat');
+  assert.equal(models[0].capabilities.vision, false);
   assert.equal(models[0].isRemote, false);
-  assert.equal(models[1].category, 'visionLanguage');
-  assert.equal(models[1].isVisionLanguage, true);
-  assert.equal(models[2].id, 'remote-gpt');
+  assert.equal(models[1].capabilities.vision, true);
+  assert.deepEqual(models[1].input, ['text', 'image']);
+  assert.equal(models[2].id, 'embed-1');
+  assert.equal(models[2].task, 'embedding');
   assert.equal(models[2].isRemote, true);
   assert.equal(models[2].isCustom, true);
+
+  const chatModels = await sdk.modelkit.listModelsByTask('chat');
+  assert.deepEqual(chatModels.map((m) => m.id), ['qwen3-8b', 'qwen2.5-vl-7b']);
 });
 
 test('supports direct cronkit client usage', async () => {
@@ -865,7 +870,7 @@ test('dart-like structured source layout exists in the TypeScript project', () =
     '../src/client/appkit/dto.ts',
     '../src/client/cronkit/cronkit_client.ts',
     '../src/client/cronkit/dto.ts',
-    '../src/client/llmkit/llmkit_client.ts',
+    '../src/client/modelkit/modelkit_client.ts',
     '../src/client/toolkit/toolkit_client.ts',
     '../src/client/systemkit/systemkit_client.ts',
     '../src/client/systemkit/dto.ts',
