@@ -1,5 +1,6 @@
 export * from './types';
 export * from './utils';
+export * from './bridge';
 export * from './clients';
 export * from './sdk';
 export * from './client/shared/dto';

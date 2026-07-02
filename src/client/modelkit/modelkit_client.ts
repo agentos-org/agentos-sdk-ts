@@ -85,7 +85,10 @@ export class ModelKitAsrClient {
       method: 'POST',
       data: undefined,
       headers: {}
-    }).catch(async () => {
+    }).catch(async (error) => {
+      if (!isHttpBaseUrl(this.apiClient.baseUrl)) {
+        throw error;
+      }
       // Fall back to native fetch so that FormData is sent verbatim instead of
       // being JSON-serialized by requestStream's default path.
       const url = this.apiClient.buildUrl('/modelkit/asr/v1/audio/transcriptions');
@@ -214,6 +217,15 @@ function buildAsrFormData(request: ModelAsrRequest): FormData {
     form.set(key, typeof value === 'string' ? value : JSON.stringify(value));
   }
   return form;
+}
+
+function isHttpBaseUrl(baseUrl: string): boolean {
+  try {
+    const protocol = new URL(baseUrl).protocol;
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function normalizeModelInfo(item: Record<string, unknown>): ModelInfo {

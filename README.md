@@ -137,6 +137,44 @@ const completion = await sdk.modelkit.chat.create({
 console.log(completion.choices?.[0]?.message?.content);
 ```
 
+### Use AgentOS Mobile WebView Bridge
+
+Web apps opened inside AgentOS Mobile can keep using the same `AgentOSSDK`
+calls. When constructed with default options, the SDK detects
+`window.agentos.bridge.request` and routes requests through the mobile bridge
+transport. Normal browsers, or callers that explicitly pass `baseUrl`, `fetch`,
+or `apiClient`, keep using the existing HTTP gateway configuration.
+
+```ts
+import { AgentOSSDK } from 'agentos-sdk-ts';
+
+const sdk = new AgentOSSDK();
+
+const models = await sdk.modelkit.listModels();
+console.log(models);
+```
+
+Note: consistent SDK calls do not mean the mobile bridge covers every HTTP
+gateway route yet. The V1 bridge is intended for context, model list, AgentKit
+session/chat, stop, and clear routes. Unsupported routes should return a
+structured native bridge error such as
+`{ code: 'route_not_supported', message: '...' }`; the SDK surfaces it through
+the existing `ApiError` path.
+
+- `isAgentOSBridgeAvailable()` only checks that `window.agentos.bridge.request`
+  exists. It does not prove the current origin is authorized.
+- `getAgentOSBridgeContext()` is the authorization probe. AgentOS Mobile should
+  return a clear bridge error when the current web app is not registered or not
+  allowed to use agent mode.
+- To force a specific environment, keep passing explicit
+  `new AgentOSSDK({ baseUrl, fetch })` options.
+- `appId` and `origin` in bridge requests are debug hints from JavaScript. Native
+  code must authorize with its trusted mini app definition and current main
+  frame URL.
+- Streaming bridge events are converted into SSE `Response` bodies, so existing
+  AgentKit and OpenAI-compatible ModelKit stream parsers can keep using
+  `parseSse()`.
+
 ## API Reference
 
 ### AgentOSSDK

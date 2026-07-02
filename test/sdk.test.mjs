@@ -7,8 +7,12 @@ import {
   AgentOSEventHandler,
   AgentOSSDK,
   AgentOSSubscribeConnectionStatus,
+  createAgentOSBridgeFetch,
   CronKitClient,
-  EventType
+  EventType,
+  getAgentOSBridgeContext,
+  isAgentOSBridgeAvailable,
+  parseSse
 } from '../dist/index.js';
 import {
   DAEMON_DEFAULT_PREFIX,
@@ -664,6 +668,342 @@ test('modelkit listModels normalizes task, capabilities, and remote flags', asyn
   assert.deepEqual(chatModels.map((m) => m.id), ['qwen3-8b', 'qwen2.5-vl-7b']);
 });
 
+test('agentos bridge helpers detect injected mobile bridge and read context', async () => {
+  const previousWindow = globalThis.window;
+  try {
+    delete globalThis.window;
+    assert.equal(isAgentOSBridgeAvailable(), false);
+
+    globalThis.window = {
+      location: { origin: 'https://mini.example' },
+      agentos: {
+        bridge: {
+          async request() {
+            return { id: 'unused', ok: true, status: 200, body: null };
+          },
+          async cancel() {}
+        },
+        context: {
+          async get() {
+            return {
+              appId: 'com.example.webapp',
+              baseUrl: 'agentos://mobile',
+              selectedModel: {
+                id: 'qwen-local',
+                name: 'Qwen Local',
+                capabilities: { reasoning: true, toolCall: false, vision: false }
+              }
+            };
+          }
+        }
+      }
+    };
+
+    assert.equal(isAgentOSBridgeAvailable(), true);
+    const context = await getAgentOSBridgeContext();
+    assert.equal(context.appId, 'com.example.webapp');
+    assert.equal(context.baseUrl, 'agentos://mobile');
+    assert.equal(context.selectedModel.id, 'qwen-local');
+  } finally {
+    restoreWindow(previousWindow);
+  }
+});
+
+test('agentos bridge fetch maps non-stream requests and error responses', async () => {
+  const previousWindow = globalThis.window;
+  const envelopes = [];
+  try {
+    globalThis.window = {
+      location: { origin: 'https://mini.example' },
+      agentos: {
+        bridge: {
+          async request(envelope) {
+            envelopes.push(envelope);
+            if (envelope.path === '/modelkit/models') {
+              return {
+                id: envelope.id,
+                ok: true,
+                status: 200,
+                headers: { 'x-native': 'ok' },
+                body: [
+                  {
+                    id: 'qwen-local',
+                    name: 'Qwen Local',
+                    alias: 'qwen',
+                    task: 'chat',
+                    capabilities: { reasoning: true, toolCall: false, vision: false }
+                  }
+                ]
+              };
+            }
+            return {
+              id: envelope.id,
+              ok: false,
+              status: 404,
+              error: { code: 'route_not_supported', message: 'Unsupported bridge route.' }
+            };
+          },
+          async cancel() {}
+        }
+      }
+    };
+
+    const bridgeFetch = createAgentOSBridgeFetch({ appId: 'com.example.webapp' });
+    const response = await bridgeFetch('agentos://mobile/modelkit/models?task=chat', {
+      headers: { accept: 'application/json' }
+    });
+    assert.equal(response.ok, true);
+    assert.equal(response.headers.get('x-native'), 'ok');
+    assert.equal((await response.json())[0].id, 'qwen-local');
+
+    assert.equal(envelopes[0].protocol, 'agentos.web.bridge');
+    assert.equal(envelopes[0].protocolVersion, '1.0');
+    assert.equal(envelopes[0].appId, 'com.example.webapp');
+    assert.equal(envelopes[0].origin, 'https://mini.example');
+    assert.equal(envelopes[0].method, 'GET');
+    assert.equal(envelopes[0].path, '/modelkit/models');
+    assert.deepEqual(envelopes[0].query, { task: 'chat' });
+    assert.equal(envelopes[0].headers.accept, 'application/json');
+
+    const errorResponse = await bridgeFetch('agentos://mobile/cronkit/task/list');
+    assert.equal(errorResponse.ok, false);
+    assert.equal(errorResponse.status, 404);
+    assert.deepEqual(await errorResponse.json(), {
+      code: 'route_not_supported',
+      message: 'Unsupported bridge route.'
+    });
+  } finally {
+    restoreWindow(previousWindow);
+  }
+});
+
+test('agentos sdk uses bridge fetch without changing modelkit callers', async () => {
+  const previousWindow = globalThis.window;
+  try {
+    globalThis.window = {
+      location: { origin: 'https://mini.example' },
+      agentos: {
+        bridge: {
+          async request(envelope) {
+            assert.equal(envelope.path, '/modelkit/models');
+            return {
+              id: envelope.id,
+              ok: true,
+              status: 200,
+              body: [
+                {
+                  id: 'mobile-model',
+                  name: 'Mobile Model',
+                  alias: 'mobile',
+                  task: 'chat',
+                  capabilities: { reasoning: false, toolCall: false, vision: true }
+                }
+              ]
+            };
+          },
+          async cancel() {}
+        }
+      }
+    };
+
+    const sdk = new AgentOSSDK({
+      baseUrl: 'agentos://mobile',
+      fetch: createAgentOSBridgeFetch({ appId: 'com.example.webapp' })
+    });
+    const models = await sdk.modelkit.listModels();
+    assert.equal(models[0].id, 'mobile-model');
+    assert.equal(models[0].capabilities.vision, true);
+  } finally {
+    restoreWindow(previousWindow);
+  }
+});
+
+test('agentos sdk auto uses injected bridge transport by default', async () => {
+  const previousWindow = globalThis.window;
+  const previousFetch = globalThis.fetch;
+  const envelopes = [];
+  try {
+    globalThis.fetch = async () => {
+      throw new Error('global fetch should not be used when AgentOS bridge is available');
+    };
+    globalThis.window = {
+      location: { origin: 'https://mini.example' },
+      agentos: {
+        bridge: {
+          async request(envelope) {
+            envelopes.push(envelope);
+            assert.equal(envelope.path, '/modelkit/models');
+            return {
+              id: envelope.id,
+              ok: true,
+              status: 200,
+              body: [
+                {
+                  id: 'auto-mobile-model',
+                  name: 'Auto Mobile Model',
+                  task: 'chat',
+                  capabilities: { vision: true }
+                }
+              ]
+            };
+          },
+          async cancel() {}
+        },
+        context: {
+          appId: 'com.example.auto',
+          baseUrl: 'agentos://mobile'
+        }
+      }
+    };
+
+    const sdk = new AgentOSSDK();
+    const models = await sdk.modelkit.listModels();
+
+    assert.equal(models[0].id, 'auto-mobile-model');
+    assert.equal(envelopes[0].protocol, 'agentos.web.bridge');
+    assert.equal(envelopes[0].appId, 'com.example.auto');
+    assert.equal(envelopes[0].origin, 'https://mini.example');
+  } finally {
+    globalThis.fetch = previousFetch;
+    restoreWindow(previousWindow);
+  }
+});
+
+test('agentos sdk preserves bridge errors without falling back to global fetch', async () => {
+  const previousWindow = globalThis.window;
+  const previousFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => {
+      throw new Error('global fetch should not be used for bridge requests');
+    };
+    globalThis.window = {
+      location: { origin: 'https://mini.example' },
+      agentos: {
+        bridge: {
+          async request(envelope) {
+            assert.equal(envelope.path, '/modelkit/asr/v1/audio/transcriptions');
+            return {
+              id: envelope.id,
+              ok: false,
+              status: 404,
+              error: { code: 'route_not_supported', message: 'Unsupported bridge route.' }
+            };
+          },
+          async cancel() {}
+        },
+        context: {
+          baseUrl: 'agentos://mobile'
+        }
+      }
+    };
+
+    const sdk = new AgentOSSDK();
+
+    await assert.rejects(
+      () => sdk.modelkit.asr.transcribe({ model: 'asr-local', file: new Blob(['audio']) }),
+      (error) => {
+        assert.equal(error.name, 'ApiError');
+        assert.equal(error.status, 404);
+        assert.deepEqual(error.data, {
+          code: 'route_not_supported',
+          message: 'Unsupported bridge route.'
+        });
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+    restoreWindow(previousWindow);
+  }
+});
+
+test('agentos bridge fetch converts bridge stream events to SSE and cancels on abort', async () => {
+  const previousWindow = globalThis.window;
+  const cancelled = [];
+  let streamRequestId;
+  try {
+    globalThis.window = {
+      location: { origin: 'https://mini.example' },
+      addEventListener(type, listener) {
+        globalThis.window.listener = { type, listener };
+      },
+      removeEventListener(type, listener) {
+        if (globalThis.window.listener?.type === type && globalThis.window.listener.listener === listener) {
+          globalThis.window.listener = undefined;
+        }
+      },
+      dispatchEvent(event) {
+        globalThis.window.listener?.listener(event);
+      },
+      agentos: {
+        bridge: {
+          async request(envelope) {
+            streamRequestId = envelope.id;
+            assert.equal(envelope.stream, true);
+            return {
+              id: envelope.id,
+              ok: true,
+              status: 200,
+              headers: { 'content-type': 'text/event-stream' },
+              body: null
+            };
+          },
+          async cancel(requestId) {
+            cancelled.push(requestId);
+          }
+        }
+      }
+    };
+
+    const controller = new AbortController();
+    const response = await createAgentOSBridgeFetch()('agentos://mobile/agentkit/chat?sessionId=s1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: [{ type: 'text', message: 'hello' }], isChunk: true }),
+      signal: controller.signal
+    });
+
+    const events = [];
+    const readerTask = (async () => {
+      for await (const event of parseSse(response)) {
+        events.push(event);
+      }
+    })();
+
+    globalThis.window.dispatchEvent(new CustomEvent('agentos:bridge:event', {
+      detail: {
+        id: streamRequestId,
+        type: 'chunk',
+        event: 'agentmessagechunk',
+        data: '{"message":"hel"}'
+      }
+    }));
+    globalThis.window.dispatchEvent(new CustomEvent('agentos:bridge:event', {
+      detail: {
+        id: streamRequestId,
+        type: 'done'
+      }
+    }));
+    await readerTask;
+
+    assert.deepEqual(events, [
+      { event: 'agentmessagechunk', data: '{"message":"hel"}' }
+    ]);
+
+    const abortController = new AbortController();
+    await createAgentOSBridgeFetch()('agentos://mobile/agentkit/chat', {
+      method: 'POST',
+      body: JSON.stringify({ content: [] }),
+      signal: abortController.signal
+    });
+    abortController.abort();
+    await sleep(0);
+    assert.deepEqual(cancelled, [streamRequestId]);
+  } finally {
+    restoreWindow(previousWindow);
+  }
+});
+
 test('supports direct cronkit client usage', async () => {
   const client = new CronKitClient(new AgentOSSDK({
     fetch: createMockFetch((request) => {
@@ -1045,6 +1385,14 @@ function recordToken(store, pathname, token) {
   const items = store.get(pathname) ?? [];
   items.push(token);
   store.set(pathname, items);
+}
+
+function restoreWindow(previousWindow) {
+  if (previousWindow === undefined) {
+    delete globalThis.window;
+  } else {
+    globalThis.window = previousWindow;
+  }
 }
 
 function normalizeHeaders(headers) {

@@ -30,8 +30,15 @@ import { ModelTask } from '../modelkit/dto';
 import { SystemKitClient } from '../systemkit/systemkit_client';
 import { ToolKitClient } from '../toolkit/toolkit_client';
 import { ApiClient, ApiError, Subscription, asJsonMap, ensureError } from '../../utils';
+import { getAgentOSBridgeTransportDefaults } from '../../bridge';
 
 export interface AgentOSSDKOptions {
+  /**
+   * Explicit transport options always win. When no apiClient/baseUrl/fetch is
+   * provided and AgentOS Mobile injects window.agentos.bridge.request, the SDK
+   * automatically uses the bridge transport; unsupported bridge routes still
+   * surface as normal ApiError failures from the native bridge response.
+   */
   baseUrl?: string;
   connectTimeout?: number;
   receiveTimeout?: number;
@@ -87,16 +94,19 @@ export class AgentOSSDK {
   disposed = false;
 
   constructor(options: AgentOSSDKOptions = {}) {
+    const transportDefaults = shouldAutoUseBridgeTransport(options)
+      ? getAgentOSBridgeTransportDefaults()
+      : undefined;
     this.apiClient = (options.apiClient ?? new ApiClient({
-      baseUrl: options.baseUrl,
+      baseUrl: options.baseUrl ?? transportDefaults?.baseUrl,
       connectTimeout: options.connectTimeout,
       receiveTimeout: options.receiveTimeout,
-      fetch: options.fetch
+      fetch: options.fetch ?? transportDefaults?.fetch
     })).withOverrides({
-      baseUrl: options.baseUrl,
+      baseUrl: options.baseUrl ?? transportDefaults?.baseUrl,
       connectTimeout: options.connectTimeout,
       receiveTimeout: options.receiveTimeout,
-      fetch: options.fetch
+      fetch: options.fetch ?? transportDefaults?.fetch
     });
     this.systemKit = new SystemKitClient(this.apiClient);
     this.agentKit = new AgentKitClient(this.apiClient);
@@ -647,6 +657,10 @@ export class ToolKitModule {
   subscribeToolEvents(options: { daemonApiKey: string; snapshot?: boolean; signal?: AbortSignal }) {
     return this.client.toolKit.subscribeToolEvents(options.daemonApiKey, options.snapshot ?? true, options.signal);
   }
+}
+
+function shouldAutoUseBridgeTransport(options: AgentOSSDKOptions): boolean {
+  return options.apiClient === undefined && options.baseUrl === undefined && options.fetch === undefined;
 }
 
 function bundleKey(bundle: AppBundle): AppAuthCacheKey {

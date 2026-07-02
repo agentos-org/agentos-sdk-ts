@@ -136,6 +136,39 @@ const completion = await sdk.modelkit.chat.create({
 console.log(completion.choices?.[0]?.message?.content);
 ```
 
+### 使用 AgentOS Mobile WebView Bridge
+
+在 AgentOS Mobile 内打开的 Web App 可以继续使用相同的 `AgentOSSDK`
+调用方式。SDK 会在默认构造时自动检测 `window.agentos.bridge.request`，
+并把请求切换到 mobile bridge transport；普通浏览器或显式传入 `baseUrl` /
+`fetch` / `apiClient` 时仍使用原来的 HTTP gateway 配置。
+
+```ts
+import { AgentOSSDK } from 'agentos-sdk-ts';
+
+const sdk = new AgentOSSDK();
+
+const models = await sdk.modelkit.listModels();
+console.log(models);
+```
+
+注意：调用方式一致不代表 mobile bridge 已经覆盖全部 HTTP gateway route。
+当前 V1 bridge 主要支持 context、model list、AgentKit session/chat、stop、
+clear 路由。不支持的 route 应由 Native 返回结构化 bridge error，例如
+`{ code: 'route_not_supported', message: '...' }`；SDK 会沿用现有
+`ApiError` 路径暴露给业务方。
+
+- `isAgentOSBridgeAvailable()` 只检查 `window.agentos.bridge.request` 是否存在，
+  不代表当前 origin 已授权。
+- `getAgentOSBridgeContext()` 是授权探测点。当前 Web App 未注册或未启用 agent
+  mode 时，AgentOS Mobile 应返回明确的 bridge error。
+- 如需强制指定环境，可以继续通过 `new AgentOSSDK({ baseUrl, fetch })`
+  显式覆盖自动选择。
+- bridge request 中的 `appId` 和 `origin` 只是 JavaScript 提供的调试 hint。
+  Native 必须用可信的 mini app 定义和当前 main frame URL 做授权。
+- 流式 bridge event 会转换成 SSE `Response`，因此现有 AgentKit 和 OpenAI 兼容
+  ModelKit 流式解析可以继续复用 `parseSse()`。
+
 ## API 参考
 
 ### AgentOSSDK
