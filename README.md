@@ -280,7 +280,7 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 
 | Method | Parameters | Description |
 | --- | --- | --- |
-| `listTool(all?)` | `all` | Lists available tools from `/toolkit/list`. |
+| `listTool(all?)` | `all` | Lists available tools from `/toolkit/list`, including tool server metadata such as `server.repo`, `server.name`, and `server.tag` when provided by the gateway. |
 | `loadTool(toolId)` | `toolId` | Loads an `OpenTool` definition from `/toolkit/{toolId}/load` and returns an `OpenTool` instance. |
 | `subscribeToolEvents({ daemonApiKey, snapshot, signal })` | `daemonApiKey`, `snapshot`, `signal` | Subscribes to `/toolkit/events` and streams `ToolLifecycleEventDto` updates. |
 

@@ -103,7 +103,19 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
         });
       }
       if (request.pathname === '/base/toolkit/list') {
-        return jsonResponse([{ id: 'tool-1', alias: 'demo' }]);
+        return jsonResponse([{
+          id: 'tool-1',
+          alias: 'demo',
+          host: '127.0.0.1',
+          port: 9001,
+          status: 'running',
+          serverId: 'srv-1',
+          server: {
+            repo: 'demo-repo',
+            name: 'demo',
+            tag: '1.0.0'
+          }
+        }]);
       }
       if (request.pathname === '/base/toolkit/tool-1/load') {
         return jsonResponse({ opentool: '1.0.0', info: { title: 'demo' } });
@@ -188,6 +200,9 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
 
   const tools = await sdk.toolkit.listTool();
   assert.equal(tools[0].id, 'tool-1');
+  assert.equal(tools[0].server?.repo, 'demo-repo');
+  assert.equal(tools[0].server?.name, 'demo');
+  assert.equal(tools[0].server?.tag, '1.0.0');
   const openTool = await sdk.toolkit.loadTool('tool-1');
   assert.equal(openTool.info.title, 'demo');
   assert.equal(typeof openTool.toJson, 'function');
