@@ -259,7 +259,7 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 | `initSimple({ simpleCapability })` | `simpleCapability` | Initializes a SimpleAgent session. |
 | `chat(session, userTask, handler)` | `session`, `userTask`, `handler` | Starts a SessionAgent task and delivers SSE events to the handler callbacks. |
 | `chatSimple({ sessionId, userTask })` | `sessionId`, `userTask` | Executes a SimpleAgent request and returns a one-time response. |
-| `history({ sessionId })` | `sessionId` | Retrieves message history for a session. |
+| `history({ sessionId, page?, pageSize? })` | `sessionId`, `page`, `pageSize` | Retrieves message history for a session. `page` and `pageSize` must be supplied together as positive integers; omit both to retrieve the complete persisted history. |
 | `stop({ sessionId, taskId? })` | `sessionId`, `taskId` | Stops a session or task. |
 | `clear({ sessionId })` | `sessionId` | Clears session data. |
 | `callback({ sessionId, toolReturn })` | `sessionId`, `toolReturn` | Sends tool callback results. |
@@ -334,6 +334,8 @@ await sdk.dispose();
 - `AgentMessage.completions` supports `limits`:
   - `maxTokens`
   - `contextWindowSize`
+- `AgentMessage.originalTaskId` identifies the root task. Older AgentOS servers may fall back to `taskId` when producing it.
+- When `AgentMessage.type` is `taskStatus`, its `content` can be represented by `TaskStatus`, including `status`, optional `taskId`, and optional `description`.
 
 ### AgentMessageHandler (Tool Callback)
 

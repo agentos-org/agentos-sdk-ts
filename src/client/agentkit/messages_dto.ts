@@ -31,6 +31,7 @@ export interface Completions {
 export interface AgentMessage {
   sessionId: string;
   agentId?: string;
+  originalTaskId: string;
   parentTaskId?: string;
   taskId: string;
   role: string;
@@ -82,6 +83,7 @@ export interface Dispatch {
 
 export interface TaskStatus {
   status: string;
+  taskId?: string;
   description?: Record<string, unknown>;
 }
 

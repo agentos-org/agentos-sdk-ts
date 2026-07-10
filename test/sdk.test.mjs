@@ -391,6 +391,46 @@ test('agentkit retries once after a 401 by re-registering the bundle', async () 
   assert.equal(state.getAgentCalls, 2);
 });
 
+test('agentkit forwards history pagination and returns root task metadata', async () => {
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/appkit/register') {
+        return jsonResponse({ token: 'token-1' });
+      }
+      if (request.pathname === '/agentkit/history') {
+        assert.equal(request.headers.authorization, 'Bearer token-1');
+        assert.equal(request.searchParams.get('sessionId'), 'session-1');
+        assert.equal(request.searchParams.get('page'), '2');
+        assert.equal(request.searchParams.get('pageSize'), '50');
+        return jsonResponse([{
+          sessionId: 'session-1',
+          originalTaskId: 'root-task',
+          taskId: 'child-task',
+          role: 'agent',
+          to: 'user',
+          type: 'taskStatus',
+          content: {
+            status: 'done',
+            taskId: 'child-task'
+          },
+          createTime: '2026-07-10T00:00:00.000Z'
+        }]);
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+
+  await sdk.agentos.registerBundle({ bundleId: 'com.demo.app' });
+  const messages = await sdk.agentkit.history({
+    sessionId: 'session-1',
+    page: 2,
+    pageSize: 50
+  });
+
+  assert.equal(messages[0].originalTaskId, 'root-task');
+  assert.equal(messages[0].content.taskId, 'child-task');
+});
+
 test('cronkit retries after invalid app token text response', async () => {
   const recovery = createAuthRecoveryFetch();
   const sdk = new AgentOSSDK({ fetch: recovery.fetch });

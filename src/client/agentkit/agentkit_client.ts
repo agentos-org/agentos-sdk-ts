@@ -7,10 +7,12 @@ import {
 } from './capability_dto';
 import {
   normalizeUserTask,
+  type AgentMessage,
   type AgentEvent,
   type EventToolReturn,
   type UserTask
 } from './messages_dto';
+import type { AgentHistoryPagination } from './sessions_dto';
 import type { ToolReturn } from './common_dto';
 import {
   ApiClient,
@@ -100,9 +102,13 @@ export class AgentKitClient {
     });
   }
 
-  history(bearerToken: string, sessionId: string): Promise<unknown[]> {
-    return this.apiClient.request<unknown[]>('/agentkit/history', {
-      query: { sessionId },
+  history(
+    bearerToken: string,
+    sessionId: string,
+    pagination: AgentHistoryPagination = {}
+  ): Promise<AgentMessage[]> {
+    return this.apiClient.request<AgentMessage[]>('/agentkit/history', {
+      query: { sessionId, ...pagination },
       headers: authHeaders(bearerToken)
     });
   }

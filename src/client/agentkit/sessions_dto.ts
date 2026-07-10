@@ -14,6 +14,12 @@ export interface SessionTask {
   taskId?: string;
 }
 
+export type AgentHistoryPagination =
+  | { page?: never; pageSize?: never }
+  | { page: number; pageSize: number };
+
+export type AgentHistoryOptions = Session & AgentHistoryPagination;
+
 export interface SessionAgentMessage {
   sessionId: string;
   agentMessage: AgentMessage;

@@ -253,7 +253,7 @@ new AgentOSSDK({
 | `initSimple({ simpleCapability })` | `simpleCapability` | 初始化 SimpleAgent 会话。 |
 | `chat(session, userTask, handler)` | `session`、`userTask`、`handler` | 启动 SessionAgent 任务，并通过回调处理 SSE 事件。 |
 | `chatSimple({ sessionId, userTask })` | `sessionId`、`userTask` | 执行 SimpleAgent 请求并返回一次性响应。 |
-| `history({ sessionId })` | `sessionId` | 获取会话历史消息。 |
+| `history({ sessionId, page?, pageSize? })` | `sessionId`、`page`、`pageSize` | 获取会话历史消息。`page` 和 `pageSize` 必须成对提供，且均为正整数；两者均省略时返回完整持久化历史。 |
 | `stop({ sessionId, taskId? })` | `sessionId`、`taskId` | 停止会话或任务。 |
 | `clear({ sessionId })` | `sessionId` | 清除会话数据。 |
 | `callback({ sessionId, toolReturn })` | `sessionId`、`toolReturn` | 发送工具回调结果。 |
@@ -327,6 +327,8 @@ await sdk.dispose();
 - `AgentMessage.completions` 支持 `limits`：
   - `maxTokens`
   - `contextWindowSize`
+- `AgentMessage.originalTaskId` 标识根任务。旧版 AgentOS 服务生成该字段时可能回退使用 `taskId`。
+- 当 `AgentMessage.type` 为 `taskStatus` 时，其 `content` 可由 `TaskStatus` 表示，包含 `status`、可选 `taskId` 和可选 `description`。
 
 ### AgentMessageHandler（工具回调）
 

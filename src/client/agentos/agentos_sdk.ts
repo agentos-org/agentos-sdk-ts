@@ -4,6 +4,7 @@ import {
   AgentOSSubscribeConnectionStatus,
   type Agent,
   type AgentEvent,
+  type AgentHistoryOptions,
   type AgentMessage,
   type AgentMessageChunk,
   type AgentOSSubscribeConnectionEvent,
@@ -550,8 +551,10 @@ export class AgentKitModule {
     );
   }
 
-  history(options: { sessionId: string }) {
-    return this.client.withAppAuthRetry((token) => this.client.agentKit.history(token, options.sessionId));
+  history(options: AgentHistoryOptions) {
+    return this.client.withAppAuthRetry((token) =>
+      this.client.agentKit.history(token, options.sessionId, options)
+    );
   }
 
   stop(options: { sessionId: string; taskId?: string }) {
