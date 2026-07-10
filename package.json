@@ -1,6 +1,6 @@
 {
   "name": "agentos-sdk-ts",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "TypeScript SDK for AgentOS APIs and clients.",
   "license": "MIT",
   "repository": {
