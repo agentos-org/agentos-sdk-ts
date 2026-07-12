@@ -21,6 +21,13 @@ export interface TokenUsage {
   contextUsageRatio?: number;
 }
 
+export class HistoryTurnStatus {
+  static readonly running = 'running';
+  static readonly done = 'done';
+  static readonly error = 'error';
+  static readonly stopped = 'stopped';
+}
+
 export interface Completions {
   usage?: TokenUsage;
   id: string;
@@ -53,6 +60,20 @@ export interface AgentMessageChunk {
   type: string;
   part: unknown;
   createTime: string;
+}
+
+export interface HistoryTurnSummary {
+  originalTaskId: string;
+  sessionId: string;
+  userMessage: AgentMessage | null;
+  finalMessage: AgentMessage | null;
+  status: string;
+  error: string | null;
+  createdAt: string | null;
+  completedAt: string | null;
+  durationMs: number | null;
+  usage: TokenUsage | null;
+  processMessageCount: number;
 }
 
 export interface UserTask {

@@ -11,6 +11,7 @@ import {
   CronKitClient,
   EventType,
   getAgentOSBridgeContext,
+  HistoryTurnStatus,
   isAgentOSBridgeAvailable,
   parseSse
 } from '../dist/index.js';
@@ -429,6 +430,252 @@ test('agentkit forwards history pagination and returns root task metadata', asyn
 
   assert.equal(messages[0].originalTaskId, 'root-task');
   assert.equal(messages[0].content.taskId, 'child-task');
+});
+
+test('agentkit loads summary-first history and lazily loads process messages', async () => {
+  const requests = [];
+  const summaries = [
+    {
+      originalTaskId: 'task-running',
+      sessionId: 'root-session',
+      userMessage: {
+        sessionId: 'root-session',
+        originalTaskId: 'task-running',
+        taskId: 'task-running',
+        role: 'user',
+        to: 'agent',
+        type: 'contentList',
+        content: [{ type: 'text', message: 'hello' }],
+        createTime: '2026-07-12T00:00:00.000Z'
+      },
+      finalMessage: null,
+      status: 'running',
+      error: null,
+      createdAt: '2026-07-12T00:00:00.000Z',
+      completedAt: null,
+      durationMs: null,
+      usage: null,
+      processMessageCount: 3
+    },
+    {
+      originalTaskId: 'task-done',
+      sessionId: 'root-session',
+      userMessage: null,
+      finalMessage: {
+        sessionId: 'child-final',
+        originalTaskId: 'task-done',
+        taskId: 'child-task',
+        role: 'agent',
+        to: 'user',
+        type: 'contentList',
+        content: [{ type: 'text', message: 'done' }],
+        createTime: '2026-07-12T00:00:02.000Z'
+      },
+      status: 'done',
+      error: null,
+      createdAt: null,
+      completedAt: '2026-07-12T00:00:02.000Z',
+      durationMs: 2000,
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      processMessageCount: 5
+    },
+    {
+      originalTaskId: 'task-error', sessionId: 'root-session', userMessage: null, finalMessage: null,
+      status: 'error', error: 'failed', createdAt: null, completedAt: null,
+      durationMs: null, usage: null, processMessageCount: 1
+    },
+    {
+      originalTaskId: 'task-stopped', sessionId: 'root-session', userMessage: null, finalMessage: null,
+      status: 'stopped', error: null, createdAt: null, completedAt: null,
+      durationMs: null, usage: null, processMessageCount: 2
+    }
+  ];
+  const processMessages = [
+    {
+      sessionId: 'child-reasoning', originalTaskId: 'task-done', taskId: 'child-task',
+      role: 'agent', to: 'agent', type: 'reasoning', content: { text: 'thinking' },
+      reasoningContent: 'thinking', createTime: '2026-07-12T00:00:01.000Z'
+    },
+    {
+      sessionId: 'child-status', originalTaskId: 'task-done', taskId: 'child-task',
+      role: 'agent', to: 'user', type: 'taskStatus', content: { status: 'done', taskId: 'child-task' },
+      createTime: '2026-07-12T00:00:02.000Z'
+    },
+    {
+      sessionId: 'child-tool', originalTaskId: 'task-done', taskId: 'child-task',
+      role: 'tool', to: 'agent', type: 'toolReturn', content: { id: 'tool-1', result: { ok: true } },
+      createTime: '2026-07-12T00:00:01.500Z'
+    }
+  ];
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/appkit/register') {
+        return jsonResponse({ token: 'history-token' });
+      }
+      requests.push(request);
+      assert.equal(request.headers.authorization, 'Bearer history-token');
+      if (request.pathname === '/agentkit/history/summary') {
+        return jsonResponse(summaries);
+      }
+      if (request.pathname === '/agentkit/history/process') {
+        return jsonResponse(processMessages);
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+  await sdk.agentos.registerBundle({ bundleId: 'com.demo.history' });
+
+  const defaultSummaries = await sdk.agentkit.historySummary({ sessionId: 'root-session' });
+  assert.equal(requests[0].pathname, '/agentkit/history/summary');
+  assert.equal(requests[0].searchParams.get('sessionId'), 'root-session');
+  assert.equal(requests[0].searchParams.get('page'), '1');
+  assert.equal(requests[0].searchParams.get('pageSize'), '30');
+  assert.deepEqual(defaultSummaries, summaries);
+  assert.deepEqual(defaultSummaries.map((item) => item.status), ['running', 'done', 'error', 'stopped']);
+  assert.deepEqual(
+    [HistoryTurnStatus.running, HistoryTurnStatus.done, HistoryTurnStatus.error, HistoryTurnStatus.stopped],
+    ['running', 'done', 'error', 'stopped']
+  );
+  assert.equal(defaultSummaries[0].finalMessage, null);
+  assert.equal(defaultSummaries[1].finalMessage.sessionId, 'child-final');
+  assert.deepEqual(defaultSummaries[1].usage, { promptTokens: 10, completionTokens: 5, totalTokens: 15 });
+
+  await sdk.agentkit.historySummary({ sessionId: 'root-session', page: 2, pageSize: 20 });
+  assert.equal(requests[1].searchParams.get('page'), '2');
+  assert.equal(requests[1].searchParams.get('pageSize'), '20');
+
+  const messages = await sdk.agentkit.historyProcess({
+    sessionId: 'root-session',
+    originalTaskId: 'task-done'
+  });
+  assert.equal(requests[2].pathname, '/agentkit/history/process');
+  assert.equal(requests[2].searchParams.get('sessionId'), 'root-session');
+  assert.equal(requests[2].searchParams.get('originalTaskId'), 'task-done');
+  assert.equal(requests[2].searchParams.get('page'), '1');
+  assert.equal(requests[2].searchParams.get('pageSize'), '50');
+  assert.deepEqual(messages, processMessages);
+
+  await sdk.agentkit.historyProcess({
+    sessionId: 'root-session', originalTaskId: 'task-done', page: 3, pageSize: 25
+  });
+  assert.equal(requests[3].searchParams.get('page'), '3');
+  assert.equal(requests[3].searchParams.get('pageSize'), '25');
+
+  const requestCount = requests.length;
+  for (const options of [
+    { sessionId: 'root-session', page: 0 },
+    { sessionId: 'root-session', page: 1.5 },
+    { sessionId: 'root-session', pageSize: 0 },
+    { sessionId: 'root-session', pageSize: 201 }
+  ]) {
+    await assert.rejects(() => sdk.agentkit.historySummary(options), RangeError);
+  }
+  await assert.rejects(
+    () => sdk.agentkit.historyProcess({ sessionId: 'root-session', originalTaskId: '  ' }),
+    TypeError
+  );
+  await assert.rejects(
+    () => sdk.agentkit.historyProcess({ sessionId: 'root-session', originalTaskId: 'task', pageSize: 201 }),
+    RangeError
+  );
+  await assert.rejects(
+    () => sdk.agentkit.historyProcess({ sessionId: 'root-session', originalTaskId: 'task', page: 0 }),
+    RangeError
+  );
+  assert.equal(requests.length, requestCount);
+});
+
+test('agentkit history APIs retry once after a 401 with the refreshed AppKit token', async () => {
+  let registerCount = 0;
+  const historyTokens = [];
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/appkit/register') {
+        registerCount += 1;
+        return jsonResponse({ token: `token-${registerCount}` });
+      }
+      if (request.pathname === '/agentkit/history/summary') {
+        historyTokens.push(request.headers.authorization);
+        if (request.headers.authorization === 'Bearer token-1') {
+          return jsonResponse({ error: 'unauthorized' }, 401);
+        }
+        return jsonResponse([]);
+      }
+      if (request.pathname === '/agentkit/history/process') {
+        historyTokens.push(request.headers.authorization);
+        return jsonResponse([]);
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+  await sdk.agentos.registerBundle({ bundleId: 'com.demo.history' });
+
+  assert.deepEqual(await sdk.agentkit.historySummary({ sessionId: 'root' }), []);
+  assert.deepEqual(await sdk.agentkit.historyProcess({ sessionId: 'root', originalTaskId: 'task' }), []);
+  assert.deepEqual(historyTokens, ['Bearer token-1', 'Bearer token-2', 'Bearer token-2']);
+  assert.equal(registerCount, 2);
+});
+
+test('agentkit chat propagates child session ids and falls back to the root session', async () => {
+  const callbackSessionIds = [];
+  const streamSessionIds = [];
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/appkit/register') {
+        return jsonResponse({ token: 'token-1' });
+      }
+      if (request.pathname === '/agentkit/chat') {
+        return sseResponse([
+          'event: message\ndata: {"sessionId":"child-message-session","originalTaskId":"task","taskId":"task","role":"agent","to":"user","type":"contentList","content":[],"createTime":"now"}\n\n',
+          'event: chunk\ndata: {"sessionId":"child-chunk-session","taskId":"task","role":"agent","to":"user","type":"contentList","part":{},"createTime":"now"}\n\n',
+          'event: message\ndata: {"sessionId":"","originalTaskId":"task","taskId":"task","role":"agent","to":"user","type":"contentList","content":[],"createTime":"now"}\n\n',
+          'event: chunk\ndata: {"taskId":"task","role":"agent","to":"user","type":"contentList","part":{},"createTime":"now"}\n\n',
+          'event: functionCall\ndata: {"sessionId":"child-callback-session","functionCall":{"id":"call-child","name":"tool","arguments":{}}}\n\n',
+          'event: functionCall\ndata: {"sessionId":"child-stream-session","stream":true,"functionCall":{"id":"stream-child","name":"tool","arguments":{}}}\n\n',
+          'event: functionCall\ndata: {"sessionId":"","functionCall":{"id":"call-root","name":"tool","arguments":{}}}\n\n',
+          'event: functionCall\ndata: {"stream":true,"functionCall":{"id":"stream-root","name":"tool","arguments":{}}}\n\n'
+        ]);
+      }
+      if (request.pathname === '/agentkit/callback') {
+        callbackSessionIds.push(request.searchParams.get('sessionId'));
+        return jsonResponse({ ok: true });
+      }
+      if (request.pathname === '/agentkit/streamCallback') {
+        streamSessionIds.push(request.searchParams.get('sessionId'));
+        return jsonResponse({ ok: true });
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+  await sdk.agentos.registerBundle({ bundleId: 'com.demo.app' });
+  const seenMessages = [];
+  const seenChunks = [];
+  const seenFunctionCalls = [];
+  const done = deferred();
+  class Handler extends AgentMessageHandler {
+    async onMessage(sessionId) { seenMessages.push(sessionId); }
+    async onChunk(sessionId) { seenChunks.push(sessionId); }
+    async onFunctionCall(sessionId, functionCall) {
+      seenFunctionCalls.push(sessionId);
+      return { id: functionCall.id, result: { ok: true } };
+    }
+    async onStreamFunctionCall(sessionId, functionCall, onToolReturn) {
+      seenFunctionCalls.push(sessionId);
+      onToolReturn({ event: EventType.DONE, toolReturn: { id: functionCall.id, result: { ok: true } } });
+    }
+    async onDone() { done.resolve(); }
+    async onError(error) { done.reject(error); }
+  }
+
+  await sdk.agentkit.chat({ sessionId: 'root-session' }, { content: [] }, new Handler());
+  await done.promise;
+  assert.deepEqual(seenMessages, ['child-message-session', 'root-session']);
+  assert.deepEqual(seenChunks, ['child-chunk-session', 'root-session']);
+  assert.deepEqual(seenFunctionCalls, [
+    'child-callback-session', 'child-stream-session', 'root-session', 'root-session'
+  ]);
+  assert.deepEqual(callbackSessionIds, ['child-callback-session', 'root-session']);
+  assert.deepEqual(streamSessionIds, ['child-stream-session', 'root-session']);
 });
 
 test('cronkit retries after invalid app token text response', async () => {

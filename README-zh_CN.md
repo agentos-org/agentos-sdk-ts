@@ -254,10 +254,15 @@ new AgentOSSDK({
 | `chat(session, userTask, handler)` | `session`、`userTask`、`handler` | 启动 SessionAgent 任务，并通过回调处理 SSE 事件。 |
 | `chatSimple({ sessionId, userTask })` | `sessionId`、`userTask` | 执行 SimpleAgent 请求并返回一次性响应。 |
 | `history({ sessionId, page?, pageSize? })` | `sessionId`、`page`、`pageSize` | 获取会话历史消息。`page` 和 `pageSize` 必须成对提供，且均为正整数；两者均省略时返回完整持久化历史。 |
+| `historySummary({ sessionId, page?, pageSize? })` | `sessionId`、`page`、`pageSize` | 优先加载轻量历史摘要。默认 `page=1`、`pageSize=30`，`pageSize` 最大为 200。 |
+| `historyProcess({ sessionId, originalTaskId, page?, pageSize? })` | `sessionId`、`originalTaskId`、`page`、`pageSize` | 按 `originalTaskId` 懒加载单轮任务的过程消息。默认 `page=1`、`pageSize=50`，`pageSize` 最大为 200。 |
 | `stop({ sessionId, taskId? })` | `sessionId`、`taskId` | 停止会话或任务。 |
 | `clear({ sessionId })` | `sessionId` | 清除会话数据。 |
 | `callback({ sessionId, toolReturn })` | `sessionId`、`toolReturn` | 发送工具回调结果。 |
 | `streamCallback({ sessionId, eventToolReturn })` | `sessionId`、`eventToolReturn` | 发送流式工具回调结果。 |
+
+AgentKit SSE 事件携带的 child `sessionId` 会透传给 message、chunk、
+function-call 及 callback handler；缺失或为空时回退到外层 root chat session ID。
 
 ### ModelKitModule（`sdk.modelkit`）
 

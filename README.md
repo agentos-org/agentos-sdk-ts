@@ -260,10 +260,16 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 | `chat(session, userTask, handler)` | `session`, `userTask`, `handler` | Starts a SessionAgent task and delivers SSE events to the handler callbacks. |
 | `chatSimple({ sessionId, userTask })` | `sessionId`, `userTask` | Executes a SimpleAgent request and returns a one-time response. |
 | `history({ sessionId, page?, pageSize? })` | `sessionId`, `page`, `pageSize` | Retrieves message history for a session. `page` and `pageSize` must be supplied together as positive integers; omit both to retrieve the complete persisted history. |
+| `historySummary({ sessionId, page?, pageSize? })` | `sessionId`, `page`, `pageSize` | Loads lightweight turn summaries first. Defaults to `page=1`, `pageSize=30`; `pageSize` is limited to 200. |
+| `historyProcess({ sessionId, originalTaskId, page?, pageSize? })` | `sessionId`, `originalTaskId`, `page`, `pageSize` | Lazily loads process messages for one turn by `originalTaskId`. Defaults to `page=1`, `pageSize=50`; `pageSize` is limited to 200. |
 | `stop({ sessionId, taskId? })` | `sessionId`, `taskId` | Stops a session or task. |
 | `clear({ sessionId })` | `sessionId` | Clears session data. |
 | `callback({ sessionId, toolReturn })` | `sessionId`, `toolReturn` | Sends tool callback results. |
 | `streamCallback({ sessionId, eventToolReturn })` | `sessionId`, `eventToolReturn` | Sends streaming tool callback results. |
+
+For AgentKit SSE events, the event's child `sessionId` is forwarded to message,
+chunk, function-call, and callback handlers. If it is absent or empty, the root
+chat session ID is used as a fallback.
 
 ### ModelKitModule (`sdk.modelkit`)
 

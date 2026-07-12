@@ -20,6 +20,17 @@ export type AgentHistoryPagination =
 
 export type AgentHistoryOptions = Session & AgentHistoryPagination;
 
+export interface AgentHistorySummaryOptions extends Session {
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AgentHistoryProcessOptions extends Session {
+  originalTaskId: string;
+  page?: number;
+  pageSize?: number;
+}
+
 export interface SessionAgentMessage {
   sessionId: string;
   agentMessage: AgentMessage;

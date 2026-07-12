@@ -5,6 +5,8 @@ import {
   type Agent,
   type AgentEvent,
   type AgentHistoryOptions,
+  type AgentHistoryProcessOptions,
+  type AgentHistorySummaryOptions,
   type AgentMessage,
   type AgentMessageChunk,
   type AgentOSSubscribeConnectionEvent,
@@ -15,6 +17,7 @@ import {
   type Capability,
   type EventToolReturn,
   type FunctionCall,
+  type HistoryTurnSummary,
   type Session,
   type SimpleCapability,
   type ToolReturn,
@@ -531,9 +534,11 @@ export class AgentKitModule {
       try {
         for await (const event of stream) {
           if (event.agentEventType === AgentEventType.message) {
-            await agentMessageHandler.onMessage(session.sessionId, asJsonMap<AgentMessage>(event.data));
+            const message = asJsonMap<AgentMessage>(event.data);
+            await agentMessageHandler.onMessage(eventSessionId(message, session.sessionId), message);
           } else if (event.agentEventType === AgentEventType.chunk) {
-            await agentMessageHandler.onChunk(session.sessionId, asJsonMap<AgentMessageChunk>(event.data));
+            const chunk = asJsonMap<AgentMessageChunk>(event.data);
+            await agentMessageHandler.onChunk(eventSessionId(chunk, session.sessionId), chunk);
           } else if (event.agentEventType === AgentEventType.functionCall) {
             await this.handleFunctionCallEvent(session, event, agentMessageHandler);
           }
@@ -554,6 +559,18 @@ export class AgentKitModule {
   history(options: AgentHistoryOptions) {
     return this.client.withAppAuthRetry((token) =>
       this.client.agentKit.history(token, options.sessionId, options)
+    );
+  }
+
+  historySummary(options: AgentHistorySummaryOptions): Promise<HistoryTurnSummary[]> {
+    return this.client.withAppAuthRetry((token) =>
+      this.client.agentKit.historySummary(token, options.sessionId, options)
+    );
+  }
+
+  historyProcess(options: AgentHistoryProcessOptions): Promise<AgentMessage[]> {
+    return this.client.withAppAuthRetry((token) =>
+      this.client.agentKit.historyProcess(token, options.sessionId, options.originalTaskId, options)
     );
   }
 
@@ -664,6 +681,12 @@ export class ToolKitModule {
 
 function shouldAutoUseBridgeTransport(options: AgentOSSDKOptions): boolean {
   return options.apiClient === undefined && options.baseUrl === undefined && options.fetch === undefined;
+}
+
+function eventSessionId(event: { sessionId?: unknown }, rootSessionId: string): string {
+  return typeof event.sessionId === 'string' && event.sessionId.length > 0
+    ? event.sessionId
+    : rootSessionId;
 }
 
 function bundleKey(bundle: AppBundle): AppAuthCacheKey {

@@ -10,6 +10,7 @@ import {
   type AgentMessage,
   type AgentEvent,
   type EventToolReturn,
+  type HistoryTurnSummary,
   type UserTask
 } from './messages_dto';
 import type { AgentHistoryPagination } from './sessions_dto';
@@ -113,6 +114,34 @@ export class AgentKitClient {
     });
   }
 
+  historySummary(
+    bearerToken: string,
+    sessionId: string,
+    options: { page?: number; pageSize?: number } = {}
+  ): Promise<HistoryTurnSummary[]> {
+    const pagination = historyPagination(options, 30);
+    return this.apiClient.request<HistoryTurnSummary[]>('/agentkit/history/summary', {
+      query: { sessionId, ...pagination },
+      headers: authHeaders(bearerToken)
+    });
+  }
+
+  historyProcess(
+    bearerToken: string,
+    sessionId: string,
+    originalTaskId: string,
+    options: { page?: number; pageSize?: number } = {}
+  ): Promise<AgentMessage[]> {
+    if (originalTaskId.trim().length === 0) {
+      throw new TypeError('originalTaskId must not be empty.');
+    }
+    const pagination = historyPagination(options, 50);
+    return this.apiClient.request<AgentMessage[]>('/agentkit/history/process', {
+      query: { sessionId, originalTaskId, ...pagination },
+      headers: authHeaders(bearerToken)
+    });
+  }
+
   stop(bearerToken: string, sessionId: string, taskId?: string): Promise<Record<string, unknown>> {
     return this.apiClient.request<Record<string, unknown>>('/agentkit/stop', {
       query: { sessionId, taskId },
@@ -150,4 +179,19 @@ function authHeaders(bearerToken: string): Record<string, string> {
   return {
     authorization: `Bearer ${bearerToken}`
   };
+}
+
+function historyPagination(
+  options: { page?: number; pageSize?: number },
+  defaultPageSize: number
+): { page: number; pageSize: number } {
+  const page = options.page ?? 1;
+  const pageSize = options.pageSize ?? defaultPageSize;
+  if (!Number.isInteger(page) || page <= 0) {
+    throw new RangeError('page must be a positive integer.');
+  }
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 200) {
+    throw new RangeError('pageSize must be an integer between 1 and 200.');
+  }
+  return { page, pageSize };
 }
