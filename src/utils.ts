@@ -166,11 +166,14 @@ export async function* parseSse(response: Response): AsyncGenerator<SseEvent> {
   let buffer = '';
   let currentEvent = '';
   let currentData: string[] = [];
+  let completed = false;
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
+        buffer += decoder.decode();
+        completed = true;
         break;
       }
       buffer += decoder.decode(value, { stream: true });
@@ -180,9 +183,9 @@ export async function* parseSse(response: Response): AsyncGenerator<SseEvent> {
         buffer = buffer.slice(lineBreakIndex + 1);
         const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
         if (line.startsWith('event:')) {
-          currentEvent = line.slice(6).trim();
+          currentEvent = removeOptionalSseSpace(line.slice(6));
         } else if (line.startsWith('data:')) {
-          currentData.push(line.slice(5).trim());
+          currentData.push(removeOptionalSseSpace(line.slice(5)));
         } else if (line.length === 0) {
           if (currentData.length > 0) {
             yield {
@@ -196,6 +199,15 @@ export async function* parseSse(response: Response): AsyncGenerator<SseEvent> {
         lineBreakIndex = buffer.indexOf('\n');
       }
     }
+    if (buffer.length > 0) {
+      const line = buffer.endsWith('\r') ? buffer.slice(0, -1) : buffer;
+      if (line.startsWith('event:')) {
+        currentEvent = removeOptionalSseSpace(line.slice(6));
+      } else if (line.startsWith('data:')) {
+        currentData.push(removeOptionalSseSpace(line.slice(5)));
+      }
+      buffer = '';
+    }
     if (currentData.length > 0) {
       yield {
         event: currentEvent || 'message',
@@ -203,8 +215,19 @@ export async function* parseSse(response: Response): AsyncGenerator<SseEvent> {
       };
     }
   } finally {
+    if (!completed) {
+      try {
+        await reader.cancel();
+      } catch {
+        // The response may already be aborted by the caller.
+      }
+    }
     reader.releaseLock();
   }
+}
+
+function removeOptionalSseSpace(value: string): string {
+  return value.startsWith(' ') ? value.slice(1) : value;
 }
 
 export function asJsonMap<T>(value: unknown): T {

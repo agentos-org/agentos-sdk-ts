@@ -10,6 +10,7 @@ import {
   createAgentOSBridgeFetch,
   CronKitClient,
   EventType,
+  FunctionCallLifecycleError,
   getAgentOSBridgeContext,
   HistoryTurnStatus,
   isAgentOSBridgeAvailable,
@@ -359,6 +360,341 @@ test('agentkit routes function calls to callback and streamCallback', async () =
     [EventType.DATA, EventType.DONE]
   );
   assert.deepEqual(state.streamSessionIds.slice(-2), ['child-2', 'child-2']);
+});
+
+test('agentkit preserves large functionCall payloads across arbitrary SSE byte chunks', async (t) => {
+  const cases = [
+    { name: '40KB one byte LF', contentLength: 40_000, chunker: fixedChunkSize(1), lineEnding: '\n' },
+    { name: '40KB seven bytes CRLF', contentLength: 40_000, chunker: fixedChunkSize(7), lineEnding: '\r\n' },
+    { name: '40KB 1KB LF', contentLength: 40_000, chunker: fixedChunkSize(1024), lineEnding: '\n' },
+    { name: '40KB random chunks CRLF', contentLength: 40_000, chunker: randomChunkSize(41), lineEnding: '\r\n' },
+    { name: '100KB random chunks LF', contentLength: 100_000, chunker: randomChunkSize(101), lineEnding: '\n' },
+    { name: '160KB one byte CRLF', contentLength: 160_000, chunker: fixedChunkSize(1), lineEnding: '\r\n' },
+    { name: '160KB random chunks LF', contentLength: 160_000, chunker: randomChunkSize(161), lineEnding: '\n' }
+  ];
+
+  for (const testCase of cases) {
+    await t.test(testCase.name, async () => {
+      const childSessionId = '2076928786900848640';
+      const callId = `call-large-${testCase.contentLength}-${testCase.name.replaceAll(' ', '-')}`;
+      const content = createLargeFunctionCallContent(testCase.contentLength);
+      const payload = JSON.stringify({
+        sessionId: childSessionId,
+        functionCall: {
+          id: callId,
+          name: 'write_presentation_html',
+          arguments: { content }
+        }
+      });
+      const separator = testCase.lineEnding;
+      const rawSse = `event:functionCall${separator}data:${payload}${separator}${separator}`;
+      const rawBytes = new TextEncoder().encode(rawSse);
+      const callbackRequests = [];
+      const lifecycle = [];
+      let handlerCalls = 0;
+
+      const sdk = new AgentOSSDK({
+        fetch: createMockFetch((request) => {
+          if (request.pathname === '/appkit/register') {
+            return jsonResponse({ token: 'token-large-function-call' });
+          }
+          assert.equal(request.headers.authorization, 'Bearer token-large-function-call');
+          if (request.pathname === '/agentkit/chat') {
+            return chunkedSseByteResponse(rawBytes, testCase.chunker);
+          }
+          if (request.pathname === '/agentkit/callback') {
+            lifecycle.push('callback');
+            callbackRequests.push(request);
+            return jsonResponse({ ok: true });
+          }
+          throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+        })
+      });
+      await sdk.agentos.registerBundle({ bundleId: 'com.demo.large-function-call' });
+
+      const done = deferred();
+      class Handler extends AgentMessageHandler {
+        async onFunctionCall(sessionId, functionCall) {
+          lifecycle.push('handler');
+          handlerCalls += 1;
+          assert.equal(sessionId, childSessionId);
+          assert.equal(functionCall.id, callId);
+          assert.equal(functionCall.name, 'write_presentation_html');
+          assert.equal(functionCall.arguments.content, content);
+          return { id: functionCall.id, result: { ok: true } };
+        }
+
+        async onMessage() {}
+        async onChunk() {}
+        async onDone() {
+          lifecycle.push('done');
+          done.resolve();
+        }
+        async onError(error) {
+          done.reject(error);
+        }
+      }
+
+      await sdk.agentkit.chat(
+        { sessionId: '2076928786959568896' },
+        { content: [] },
+        new Handler()
+      );
+      await done.promise;
+
+      assert.equal(handlerCalls, 1);
+      assert.equal(callbackRequests.length, 1);
+      assert.equal(callbackRequests[0].searchParams.get('sessionId'), childSessionId);
+      assert.equal(callbackRequests[0].body.id, callId);
+      assert.deepEqual(callbackRequests[0].body.result, { ok: true });
+      assert.deepEqual(lifecycle, ['handler', 'callback', 'done']);
+      assert.ok(rawBytes.byteLength > testCase.contentLength);
+    });
+  }
+});
+
+test('agentkit reports handler failures to callback and aborts the current SSE stream', async () => {
+  const functionCall = {
+    id: 'call-handler-failure',
+    name: 'write_presentation_html',
+    arguments: { content: '<main>large content omitted from errors</main>' }
+  };
+  const callbackRequests = [];
+  let streamCancelCount = 0;
+  let doneCount = 0;
+  const observedError = deferred();
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/appkit/register') {
+        return jsonResponse({ token: 'token-handler-failure' });
+      }
+      if (request.pathname === '/agentkit/chat') {
+        return openSseResponse(functionCallSse('child-handler-failure', functionCall), () => {
+          streamCancelCount += 1;
+        });
+      }
+      if (request.pathname === '/agentkit/callback') {
+        callbackRequests.push(request);
+        return jsonResponse({ ok: true });
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+  await sdk.agentos.registerBundle({ bundleId: 'com.demo.handler-failure' });
+
+  class Handler extends AgentMessageHandler {
+    async onFunctionCall() {
+      throw new Error('application handler failed');
+    }
+    async onMessage() {}
+    async onChunk() {}
+    async onDone() {
+      doneCount += 1;
+    }
+    async onError(error) {
+      observedError.resolve(error);
+    }
+  }
+
+  await sdk.agentkit.chat({ sessionId: 'root-session' }, { content: [] }, new Handler());
+  const error = await observedError.promise;
+
+  assert.ok(error instanceof FunctionCallLifecycleError);
+  assert.equal(error.stage, 'function_call_handler_failed');
+  assert.equal(error.sessionId, 'child-handler-failure');
+  assert.equal(error.callId, functionCall.id);
+  assert.equal(error.functionName, functionCall.name);
+  assert.equal(error.callbackMode, 'callback');
+  assert.equal(error.message.includes(functionCall.arguments.content), false);
+  assert.equal(callbackRequests.length, 1);
+  assert.equal(callbackRequests[0].searchParams.get('sessionId'), 'child-handler-failure');
+  assert.deepEqual(callbackRequests[0].body, {
+    id: functionCall.id,
+    result: {
+      error: 'FunctionCallHandlerError',
+      stage: 'function_call_handler_failed',
+      message: 'application handler failed'
+    }
+  });
+  assert.equal(streamCancelCount, 1);
+  assert.equal(doneCount, 0);
+});
+
+test('agentkit reports stream handler failures through one terminal ERROR callback', async () => {
+  const functionCall = {
+    id: 'call-stream-handler-failure',
+    name: 'stream_write',
+    arguments: { content: 'payload' },
+    stream: true
+  };
+  const streamCallbackRequests = [];
+  let streamCancelCount = 0;
+  const observedError = deferred();
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/appkit/register') {
+        return jsonResponse({ token: 'token-stream-handler-failure' });
+      }
+      if (request.pathname === '/agentkit/chat') {
+        return openSseResponse(functionCallSse('child-stream-failure', functionCall), () => {
+          streamCancelCount += 1;
+        });
+      }
+      if (request.pathname === '/agentkit/streamCallback') {
+        streamCallbackRequests.push(request);
+        return jsonResponse({ ok: true });
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+  await sdk.agentos.registerBundle({ bundleId: 'com.demo.stream-handler-failure' });
+
+  class Handler extends AgentMessageHandler {
+    async onStreamFunctionCall() {
+      throw new Error('stream application handler failed');
+    }
+    async onMessage() {}
+    async onChunk() {}
+    async onDone() {}
+    async onError(error) {
+      observedError.resolve(error);
+    }
+  }
+
+  await sdk.agentkit.chat({ sessionId: 'root-session' }, { content: [] }, new Handler());
+  const error = await observedError.promise;
+
+  assert.ok(error instanceof FunctionCallLifecycleError);
+  assert.equal(error.stage, 'function_call_handler_failed');
+  assert.equal(error.callbackMode, 'streamCallback');
+  assert.equal(streamCallbackRequests.length, 1);
+  assert.equal(streamCallbackRequests[0].searchParams.get('sessionId'), 'child-stream-failure');
+  assert.deepEqual(streamCallbackRequests[0].body, {
+    event: EventType.ERROR,
+    toolReturn: {
+      id: functionCall.id,
+      result: {
+        error: 'FunctionCallHandlerError',
+        stage: 'function_call_handler_failed',
+        message: 'stream application handler failed'
+      }
+    }
+  });
+  assert.equal(streamCancelCount, 1);
+});
+
+test('agentkit exposes callback POST failures with function-call context', async () => {
+  const functionCall = {
+    id: 'call-callback-failure',
+    name: 'write_presentation_html',
+    arguments: { content: 'payload' }
+  };
+  let callbackCount = 0;
+  let streamCancelCount = 0;
+  const observedError = deferred();
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/appkit/register') {
+        return jsonResponse({ token: 'token-callback-failure' });
+      }
+      if (request.pathname === '/agentkit/chat') {
+        return openSseResponse(functionCallSse('child-callback-failure', functionCall), () => {
+          streamCancelCount += 1;
+        });
+      }
+      if (request.pathname === '/agentkit/callback') {
+        callbackCount += 1;
+        return jsonResponse({ error: 'callback unavailable' }, 500);
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+  await sdk.agentos.registerBundle({ bundleId: 'com.demo.callback-failure' });
+
+  class Handler extends AgentMessageHandler {
+    async onFunctionCall(_sessionId, call) {
+      return { id: call.id, result: { ok: true } };
+    }
+    async onMessage() {}
+    async onChunk() {}
+    async onDone() {}
+    async onError(error) {
+      observedError.resolve(error);
+    }
+  }
+
+  await sdk.agentkit.chat({ sessionId: 'root-session' }, { content: [] }, new Handler());
+  const error = await observedError.promise;
+
+  assert.ok(error instanceof FunctionCallLifecycleError);
+  assert.equal(error.stage, 'function_call_callback_failed');
+  assert.equal(error.sessionId, 'child-callback-failure');
+  assert.equal(error.callId, functionCall.id);
+  assert.equal(error.functionName, functionCall.name);
+  assert.equal(error.callbackMode, 'callback');
+  assert.equal(callbackCount, 1);
+  assert.equal(streamCancelCount, 1);
+});
+
+test('agentkit exposes malformed functionCall events as parse-stage failures', async () => {
+  let streamCancelCount = 0;
+  const observedError = deferred();
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/appkit/register') {
+        return jsonResponse({ token: 'token-parse-failure' });
+      }
+      if (request.pathname === '/agentkit/chat') {
+        return openSseResponse(
+          'event: functionCall\ndata: {"sessionId":"child-parse-failure"}\n\n',
+          () => {
+            streamCancelCount += 1;
+          }
+        );
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+  await sdk.agentos.registerBundle({ bundleId: 'com.demo.parse-failure' });
+
+  class Handler extends AgentMessageHandler {
+    async onMessage() {}
+    async onChunk() {}
+    async onDone() {}
+    async onError(error) {
+      observedError.resolve(error);
+    }
+  }
+
+  await sdk.agentkit.chat({ sessionId: 'root-session' }, { content: [] }, new Handler());
+  const error = await observedError.promise;
+
+  assert.ok(error instanceof FunctionCallLifecycleError);
+  assert.equal(error.stage, 'function_call_parse_failed');
+  assert.equal(error.sessionId, 'child-parse-failure');
+  assert.equal(streamCancelCount, 1);
+});
+
+test('parseSse removes only the optional leading field space', async () => {
+  const events = [];
+  for await (const event of parseSse(sseResponse([
+    'event: custom-event  \n',
+    'data: value with trailing spaces  \n\n'
+  ]))) {
+    events.push(event);
+  }
+
+  assert.deepEqual(events, [{
+    event: 'custom-event  ',
+    data: 'value with trailing spaces  '
+  }]);
+
+  const eofBytes = new TextEncoder().encode('event: final\ndata: 中文');
+  const eofEvents = [];
+  for await (const event of parseSse(chunkedSseByteResponse(eofBytes, fixedChunkSize(1)))) {
+    eofEvents.push(event);
+  }
+  assert.deepEqual(eofEvents, [{ event: 'final', data: '中文' }]);
 });
 
 test('agentkit retries once after a 401 by re-registering the bundle', async () => {
@@ -1561,6 +1897,73 @@ function sseResponse(chunks) {
       }
     }
   );
+}
+
+function functionCallSse(sessionId, functionCall) {
+  return `event: functionCall\ndata: ${JSON.stringify({ sessionId, functionCall })}\n\n`;
+}
+
+function openSseResponse(chunk, onCancel) {
+  const bytes = new TextEncoder().encode(chunk);
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+      },
+      cancel() {
+        onCancel();
+      }
+    }),
+    {
+      status: 200,
+      headers: {
+        'content-type': 'text/event-stream'
+      }
+    }
+  );
+}
+
+function chunkedSseByteResponse(bytes, nextChunkSize) {
+  let offset = 0;
+  let chunkIndex = 0;
+  return new Response(
+    new ReadableStream({
+      pull(controller) {
+        if (offset >= bytes.byteLength) {
+          controller.close();
+          return;
+        }
+        const size = Math.max(1, nextChunkSize(chunkIndex, offset, bytes.byteLength));
+        const end = Math.min(bytes.byteLength, offset + size);
+        controller.enqueue(bytes.subarray(offset, end));
+        offset = end;
+        chunkIndex += 1;
+      }
+    }),
+    {
+      status: 200,
+      headers: {
+        'content-type': 'text/event-stream'
+      }
+    }
+  );
+}
+
+function fixedChunkSize(size) {
+  return () => size;
+}
+
+function randomChunkSize(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return 1 + (state % 4096);
+  };
+}
+
+function createLargeFunctionCallContent(length) {
+  const sample = '<section data-title="中文">\nconst quote = "\\\\quoted\\\\";\n</script>\n</section>\n';
+  return sample.repeat(Math.ceil(length / sample.length)).slice(0, length);
 }
 
 function delayedJsonResponse(body, delayMs) {

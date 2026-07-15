@@ -2,6 +2,8 @@ import {
   AgentEventType,
   AgentOSEventType,
   AgentOSSubscribeConnectionStatus,
+  EventType,
+  FunctionCallLifecycleError,
   type Agent,
   type AgentEvent,
   type AgentHistoryOptions,
@@ -20,10 +22,10 @@ import {
   type HistoryTurnSummary,
   type Session,
   type SimpleCapability,
-  type ToolReturn,
   type UserTask,
   type Welcome
 } from '../../types';
+import { ToolReturn } from '../../browser_opentool';
 import { AgentMessageHandler } from '../agentkit/agent_message_handler';
 import { AgentOSEventHandler } from './agentos_event_handler';
 import { AgentKitClient } from '../agentkit/agentkit_client';
@@ -527,8 +529,9 @@ export class AgentKitModule {
   }
 
   async chat(session: Session, userTask: UserTask, agentMessageHandler: AgentMessageHandler): Promise<void> {
+    const abortController = new AbortController();
     const stream = await this.client.withAppAuthRetry((token) =>
-      Promise.resolve(this.client.agentKit.chat(token, session.sessionId, userTask))
+      Promise.resolve(this.client.agentKit.chat(token, session.sessionId, userTask, abortController.signal))
     );
     void (async () => {
       try {
@@ -545,7 +548,13 @@ export class AgentKitModule {
         }
         await agentMessageHandler.onDone();
       } catch (error) {
-        await agentMessageHandler.onError(ensureError(error));
+        abortController.abort();
+        try {
+          await agentMessageHandler.onError(ensureError(error));
+        } catch {
+          // onError is the final application callback. Avoid an unhandled
+          // rejection if the application's own error handler fails.
+        }
       }
     })();
   }
@@ -599,25 +608,120 @@ export class AgentKitModule {
     event: AgentEvent,
     agentMessageHandler: AgentMessageHandler
   ): Promise<void> {
-    const payload = asJsonMap<Record<string, unknown>>(event.data);
-    const functionCallJson = payload.functionCall;
-    if (!functionCallJson || typeof functionCallJson !== 'object' || Array.isArray(functionCallJson)) {
-      throw new TypeError('Invalid functionCall event payload: missing functionCall object.');
+    let payload: Record<string, unknown>;
+    let payloadSessionId = session.sessionId;
+    try {
+      payload = asJsonMap<Record<string, unknown>>(event.data);
+      payloadSessionId = typeof payload.sessionId === 'string' && payload.sessionId.length > 0
+        ? payload.sessionId
+        : session.sessionId;
+      const functionCallJson = payload.functionCall;
+      if (!functionCallJson || typeof functionCallJson !== 'object' || Array.isArray(functionCallJson)) {
+        throw new TypeError('Invalid functionCall event payload: missing functionCall object.');
+      }
+    } catch (error) {
+      throw new FunctionCallLifecycleError(
+        'function_call_parse_failed',
+        { sessionId: payloadSessionId },
+        error
+      );
     }
-    const functionCall = functionCallJson as FunctionCall;
-    const payloadSessionId = typeof payload.sessionId === 'string' && payload.sessionId.length > 0
-      ? payload.sessionId
-      : session.sessionId;
+    const functionCall = payload.functionCall as FunctionCall;
+    const context = {
+      sessionId: payloadSessionId,
+      callId: typeof functionCall.id === 'string' ? functionCall.id : undefined,
+      functionName: typeof functionCall.name === 'string' ? functionCall.name : undefined
+    };
     if (this.isStreamFunctionCall(payload, functionCall)) {
-      const pendingCallbacks: Array<Promise<unknown>> = [];
-      await agentMessageHandler.onStreamFunctionCall(payloadSessionId, functionCall, (eventToolReturn) => {
-        pendingCallbacks.push(this.streamCallback({ sessionId: payloadSessionId, eventToolReturn }));
-      });
+      const pendingCallbacks: Array<Promise<void>> = [];
+      const callbackErrors: unknown[] = [];
+      const queueStreamCallback = (eventToolReturn: EventToolReturn): void => {
+        pendingCallbacks.push(
+          this.streamCallback({ sessionId: payloadSessionId, eventToolReturn }).then(
+            () => undefined,
+            (error) => {
+              callbackErrors.push(error);
+            }
+          )
+        );
+      };
+      let terminalCallbackScheduled = false;
+      let handlerError: FunctionCallLifecycleError | undefined;
+      try {
+        await agentMessageHandler.onStreamFunctionCall(payloadSessionId, functionCall, (eventToolReturn) => {
+          if (eventToolReturn.event === EventType.DONE || eventToolReturn.event === EventType.ERROR) {
+            terminalCallbackScheduled = true;
+          }
+          queueStreamCallback(eventToolReturn);
+        });
+      } catch (error) {
+        handlerError = new FunctionCallLifecycleError(
+          'function_call_handler_failed',
+          { ...context, callbackMode: 'streamCallback' },
+          error
+        );
+        if (!terminalCallbackScheduled) {
+          queueStreamCallback({
+            event: EventType.ERROR,
+            toolReturn: new ToolReturn(functionCall.id, this.functionCallErrorResult(handlerError))
+          });
+        }
+      }
       await Promise.all(pendingCallbacks);
+      if (callbackErrors.length > 0) {
+        throw new FunctionCallLifecycleError(
+          'function_call_callback_failed',
+          { ...context, callbackMode: 'streamCallback' },
+          callbackErrors[0]
+        );
+      }
+      if (handlerError) {
+        throw handlerError;
+      }
       return;
     }
-    const toolReturn = await agentMessageHandler.onFunctionCall(payloadSessionId, functionCall);
-    await this.callback({ sessionId: payloadSessionId, toolReturn });
+
+    let toolReturn: ToolReturn;
+    try {
+      toolReturn = await agentMessageHandler.onFunctionCall(payloadSessionId, functionCall);
+    } catch (error) {
+      const handlerError = new FunctionCallLifecycleError(
+        'function_call_handler_failed',
+        { ...context, callbackMode: 'callback' },
+        error
+      );
+      try {
+        await this.callback({
+          sessionId: payloadSessionId,
+          toolReturn: new ToolReturn(functionCall.id, this.functionCallErrorResult(handlerError))
+        });
+      } catch (callbackError) {
+        throw new FunctionCallLifecycleError(
+          'function_call_callback_failed',
+          { ...context, callbackMode: 'callback' },
+          callbackError
+        );
+      }
+      throw handlerError;
+    }
+    try {
+      await this.callback({ sessionId: payloadSessionId, toolReturn });
+    } catch (error) {
+      throw new FunctionCallLifecycleError(
+        'function_call_callback_failed',
+        { ...context, callbackMode: 'callback' },
+        error
+      );
+    }
+  }
+
+  private functionCallErrorResult(error: FunctionCallLifecycleError): Record<string, unknown> {
+    const causeMessage = error.cause instanceof Error ? error.cause.message : String(error.cause);
+    return {
+      error: 'FunctionCallHandlerError',
+      stage: error.stage,
+      message: causeMessage
+    };
   }
 
   private isStreamFunctionCall(payload: Record<string, unknown>, functionCall: FunctionCall): boolean {

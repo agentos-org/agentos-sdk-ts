@@ -95,6 +95,49 @@ export interface EventToolReturn {
   toolReturn: ToolReturn;
 }
 
+export type FunctionCallFailureStage =
+  | 'function_call_parse_failed'
+  | 'function_call_handler_failed'
+  | 'function_call_callback_failed';
+
+export interface FunctionCallFailureContext {
+  sessionId: string;
+  callId?: string;
+  functionName?: string;
+  callbackMode?: 'callback' | 'streamCallback';
+}
+
+/**
+ * Identifies the lifecycle stage that failed without copying function-call
+ * arguments into the error message.
+ */
+export class FunctionCallLifecycleError extends Error {
+  readonly stage: FunctionCallFailureStage;
+  readonly sessionId: string;
+  readonly callId?: string;
+  readonly functionName?: string;
+  readonly callbackMode?: 'callback' | 'streamCallback';
+  readonly cause: unknown;
+
+  constructor(
+    stage: FunctionCallFailureStage,
+    context: FunctionCallFailureContext,
+    cause: unknown
+  ) {
+    const functionLabel = context.functionName ? ` function=${context.functionName}` : '';
+    const callLabel = context.callId ? ` callId=${context.callId}` : '';
+    const causeMessage = cause instanceof Error ? cause.message : String(cause);
+    super(`${stage}: sessionId=${context.sessionId}${callLabel}${functionLabel}: ${causeMessage}`);
+    this.name = 'FunctionCallLifecycleError';
+    this.stage = stage;
+    this.sessionId = context.sessionId;
+    this.callId = context.callId;
+    this.functionName = context.functionName;
+    this.callbackMode = context.callbackMode;
+    this.cause = cause;
+  }
+}
+
 export interface Dispatch {
   dispatchId: string;
   agentId: string;
