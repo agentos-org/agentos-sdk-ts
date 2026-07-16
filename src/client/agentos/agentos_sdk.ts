@@ -13,9 +13,10 @@ import {
   type AgentMessageChunk,
   type AgentOSSubscribeConnectionEvent,
   type AgentOSSubscribeOptions,
+  type AccessToken,
+  type AppEvent,
   type AppKitError,
   type AppBundle,
-  type Call,
   type Capability,
   type EventToolReturn,
   type FunctionCall,
@@ -82,6 +83,7 @@ export class AgentOSSDK {
   readonly modelKit: ModelKitClient;
   readonly toolKit: ToolKitClient;
   readonly appTokens = new Map<string, string>();
+  readonly appBundles = new Map<string, AppBundle>();
   readonly tokenContexts = new Map<string, AppAuthCacheKey>();
   readonly refreshingTokens = new Map<string, Promise<string>>();
   readonly connectionEvents = new Subscription<AgentOSSubscribeConnectionEvent>();
@@ -173,9 +175,11 @@ export class AgentOSSDK {
     return this.systemKit.getReady();
   }
 
-  async registerBundle(bundle: AppBundle): Promise<{ token: string; bundleId?: string; appGroupId?: string }> {
-    const key = bundleKey(bundle);
-    const info = await this.appKit.registerBundle(bundle);
+  async registerBundle(bundle: AppBundle): Promise<AccessToken> {
+    const registrationBundle = cloneAppBundle(bundle);
+    const key = bundleKey(registrationBundle);
+    const info = await this.appKit.registerBundle(registrationBundle);
+    this.appBundles.set(cacheKey(key), registrationBundle);
     this.cacheAppToken(key, info.token, true);
     return info;
   }
@@ -206,8 +210,8 @@ export class AgentOSSDK {
           } else if (event.agentosEventType === AgentOSEventType.error) {
             const error = asJsonMap<AppKitError>(event.data);
             await currentHandler.onError(new Error(error.error));
-          } else if (event.agentosEventType === AgentOSEventType.callApp) {
-            await currentHandler.onCallApp(asJsonMap<Call>(event.data));
+          } else if (event.agentosEventType === AgentOSEventType.appEvent) {
+            await currentHandler.onAppEvent(asJsonMap<AppEvent>(event.data));
           } else {
             throw new Error(`Unknown AgentOS event: ${event.agentosEventType}`);
           }
@@ -360,8 +364,12 @@ export class AgentOSSDK {
       return inflight;
     }
     this.clearAppToken(key, failedToken);
+    const bundle = this.appBundles.get(tokenKey) ?? {
+      bundleId: key.bundleId,
+      appGroupId: key.appGroupId
+    };
     const refresh = this.appKit
-      .registerBundle({ bundleId: key.bundleId, appGroupId: key.appGroupId })
+      .registerBundle(bundle)
       .then((info) => {
         this.cacheAppToken(key, info.token, false);
         return info.token;
@@ -797,6 +805,14 @@ function bundleKey(bundle: AppBundle): AppAuthCacheKey {
   return {
     bundleId: bundle.bundleId,
     appGroupId: bundle.appGroupId
+  };
+}
+
+function cloneAppBundle(bundle: AppBundle): AppBundle {
+  return {
+    bundleId: bundle.bundleId,
+    appGroupId: bundle.appGroupId,
+    opentoolServers: bundle.opentoolServers?.map((server) => ({ ...server }))
   };
 }
 

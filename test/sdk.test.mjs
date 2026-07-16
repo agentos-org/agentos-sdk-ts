@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 
 import {
   AgentMessageHandler,
+  AppEventType,
   AgentOSEventHandler,
   AgentOSSDK,
   AgentOSSubscribeConnectionStatus,
@@ -13,6 +14,8 @@ import {
   FunctionCallLifecycleError,
   getAgentOSBridgeContext,
   HistoryTurnStatus,
+  isOpenToolProvisionFailedEvent,
+  isOpenToolProvisionSucceededEvent,
   isAgentOSBridgeAvailable,
   parseSse
 } from '../dist/index.js';
@@ -26,6 +29,7 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
   assert.equal(typeof SchemaType, 'function');
   const state = {
     registerCount: 0,
+    lastRegisterBody: null,
     lastCronCreateBody: null,
     lastToolkitHeaders: null,
     lastModelBody: null
@@ -50,17 +54,44 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
       }
       if (request.pathname === '/base/appkit/register') {
         state.registerCount += 1;
+        state.lastRegisterBody = request.body;
         return jsonResponse({
           token: `token-${state.registerCount}`,
           bundleId: 'com.demo.app',
-          appGroupId: 'com.demo.group'
+          appGroupId: 'com.demo.group',
+          opentoolServers: [
+            {
+              ref: 'websearch',
+              server: {
+                repo: 'native',
+                name: 'opentool-server-websearch',
+                tag: '1.2.0'
+              },
+              status: 'starting'
+            },
+            {
+              ref: 'missing',
+              name: 'opentool-server-missing',
+              status: 'notFound'
+            },
+            {
+              ref: 'stock',
+              server: {
+                repo: 'native',
+                name: 'opentool-server-stock',
+                tag: '1.0.0'
+              },
+              status: 'starting'
+            }
+          ]
         });
       }
       if (request.pathname === '/base/appkit/subscribe') {
         assert.equal(request.headers.authorization, 'Bearer token-1');
         return sseResponse([
           'event: welcome\ndata: {"bundleId":"com.demo.app"}\n\n',
-          'event: callApp\ndata: {"bundleId":"com.demo.app","contentList":[{"type":"text","message":"hello"}]}\n\n'
+          'id: evt-1\nevent: appEvent\ndata: {"version":1,"id":"evt-1","type":"toolkit.provision.succeeded","source":"toolkit","time":"2026-07-15T10:30:00.000Z","subject":"websearch","data":{"ref":"websearch","name":"opentool-server-websearch","status":"running","server":{"repo":"native","name":"opentool-server-websearch","tag":"1.2.0"},"id":"tool-websearch"}}\n\n',
+          'id: evt-2\nevent: appEvent\ndata: {"version":1,"id":"evt-2","type":"toolkit.provision.failed","source":"toolkit","time":"2026-07-15T10:30:01.000Z","subject":"stock","data":{"ref":"stock","name":"opentool-server-stock","status":"failed","server":{"repo":"native","name":"opentool-server-stock","tag":"1.0.0"},"error":{"code":"startFailed","message":"process exited"}}}\n\n'
         ]);
       }
       if (request.pathname === '/base/cronkit/task/create') {
@@ -139,9 +170,22 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
 
   const registration = await sdk.agentos.registerBundle({
     bundleId: 'com.demo.app',
-    appGroupId: 'com.demo.group'
+    appGroupId: 'com.demo.group',
+    opentoolServers: [
+      { ref: 'websearch', name: 'opentool-server-websearch' },
+      { ref: 'missing', name: 'opentool-server-missing' },
+      { ref: 'stock', name: 'opentool-server-stock' }
+    ]
   });
   assert.equal(registration.token, 'token-1');
+  assert.deepEqual(state.lastRegisterBody.opentoolServers, [
+    { ref: 'websearch', name: 'opentool-server-websearch' },
+    { ref: 'missing', name: 'opentool-server-missing' },
+    { ref: 'stock', name: 'opentool-server-stock' }
+  ]);
+  assert.equal(registration.opentoolServers[0].status, 'starting');
+  assert.equal(registration.opentoolServers[0].id, undefined);
+  assert.equal(registration.opentoolServers[1].status, 'notFound');
 
   const seen = [];
   class DemoHandler extends AgentOSEventHandler {
@@ -149,8 +193,14 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
       seen.push(['welcome', welcome.bundleId]);
     }
 
-    async onCallApp(call) {
-      seen.push(['callApp', call.contentList[0].message]);
+    async onAppEvent(event) {
+      if (isOpenToolProvisionSucceededEvent(event)) {
+        assert.equal(event.type, AppEventType.toolkitProvisionSucceeded);
+        seen.push(['appEvent', event.subject, event.data.status, event.data.id]);
+      } else if (isOpenToolProvisionFailedEvent(event)) {
+        assert.equal(event.type, AppEventType.toolkitProvisionFailed);
+        seen.push(['appEvent', event.subject, event.data.status, event.data.error.code]);
+      }
     }
 
     async onDone() {
@@ -166,7 +216,8 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(seen, [
     ['welcome', 'com.demo.app'],
-    ['callApp', 'hello'],
+    ['appEvent', 'websearch', 'running', 'tool-websearch'],
+    ['appEvent', 'stock', 'failed', 'startFailed'],
     ['done']
   ]);
   assert.equal(sdk.agentos.connectionStatus, AgentOSSubscribeConnectionStatus.disconnected);
@@ -1061,7 +1112,11 @@ test('shares refreshed token across cronkit, agentkit, and subscribe', async () 
   const recovery = createAuthRecoveryFetch();
   const sdk = new AgentOSSDK({ fetch: recovery.fetch });
 
-  await sdk.agentos.registerBundle({ bundleId: 'com.demo.app', appGroupId: 'group-a' });
+  await sdk.agentos.registerBundle({
+    bundleId: 'com.demo.app',
+    appGroupId: 'group-a',
+    opentoolServers: [{ ref: 'websearch', name: 'opentool-server-websearch' }]
+  });
 
   const tasks = await sdk.cronkit.listTasks({ limit: 10 });
   assert.equal(tasks.length, 1);
@@ -1083,6 +1138,13 @@ test('shares refreshed token across cronkit, agentkit, and subscribe', async () 
   await sdk.agentos.subscribe(new Handler(), { autoReconnect: false });
   assert.equal(await welcome.promise, 'com.demo.app');
   assert.equal(recovery.registerCountFor('com.demo.app', 'group-a'), 2);
+  assert.deepEqual(
+    recovery.registerBodiesFor('com.demo.app', 'group-a').map((body) => body.opentoolServers),
+    [
+      [{ ref: 'websearch', name: 'opentool-server-websearch' }],
+      [{ ref: 'websearch', name: 'opentool-server-websearch' }]
+    ]
+  );
   assert.deepEqual(recovery.tokensUsedFor('/agentkit/initSession'), ['token-group-a-v2']);
   assert.deepEqual(recovery.tokensUsedFor('/appkit/subscribe'), ['token-group-a-v2']);
   await sdk.dispose();
@@ -2015,6 +2077,7 @@ function createMockFetch(handler) {
 
 function createAuthRecoveryFetch() {
   const registerCounts = new Map();
+  const registerBodies = new Map();
   const tokensByPath = new Map();
 
   const fetch = createMockFetch((request) => {
@@ -2024,6 +2087,9 @@ function createAuthRecoveryFetch() {
       const key = `${bundleId}::${appGroupId}`;
       const count = (registerCounts.get(key) ?? 0) + 1;
       registerCounts.set(key, count);
+      const bodies = registerBodies.get(key) ?? [];
+      bodies.push(request.body);
+      registerBodies.set(key, bodies);
       return jsonResponse({
         token: `token-${appGroupId || 'default'}-v${count}`,
         bundleId,
@@ -2079,6 +2145,9 @@ function createAuthRecoveryFetch() {
     fetch,
     registerCountFor(bundleId, appGroupId) {
       return registerCounts.get(`${bundleId}::${appGroupId}`) ?? 0;
+    },
+    registerBodiesFor(bundleId, appGroupId) {
+      return registerBodies.get(`${bundleId}::${appGroupId}`) ?? [];
     },
     tokensUsedFor(pathname) {
       return tokensByPath.get(pathname) ?? [];

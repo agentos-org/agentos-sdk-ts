@@ -50,7 +50,12 @@ import {
 ## 使用示例
 
 ```ts
-import { AgentOSEventHandler, AgentOSSDK } from 'agentos-sdk-ts';
+import {
+  AgentOSEventHandler,
+  AgentOSSDK,
+  isOpenToolProvisionFailedEvent,
+  isOpenToolProvisionSucceededEvent
+} from 'agentos-sdk-ts';
 
 async function main() {
   const sdk = new AgentOSSDK();
@@ -60,9 +65,13 @@ async function main() {
 
   const registration = await sdk.agentos.registerBundle({
     bundleId: 'com.demo.app',
-    appGroupId: 'com.demo.group'
+    appGroupId: 'com.demo.group',
+    opentoolServers: [
+      { ref: 'websearch', name: 'opentool-server-websearch' }
+    ]
   });
   console.log('App token:', registration.token);
+  console.log('OpenTool 注册状态:', registration.opentoolServers);
 
   await sdk.agentos.subscribe(new DemoEventHandler());
 }
@@ -72,8 +81,12 @@ class DemoEventHandler extends AgentOSEventHandler {
     console.log('Welcome bundleId:', welcome.bundleId);
   }
 
-  async onCallApp(call) {
-    console.log('CallApp bundleId:', call.bundleId);
+  async onAppEvent(event) {
+    if (isOpenToolProvisionSucceededEvent(event)) {
+      console.log(`OpenTool ${event.data.ref} 已就绪:`, event.data.id);
+    } else if (isOpenToolProvisionFailedEvent(event)) {
+      console.error(`OpenTool ${event.data.ref} 拉起失败:`, event.data.error);
+    }
   }
 
   async onDone() {
@@ -204,7 +217,7 @@ new AgentOSSDK({
 | `getVersion()` | 无 | 获取 AgentOS 服务版本。 |
 | `getRoot()` | 无 | 获取 AgentOS 网关元信息。 |
 | `getReady()` | 无 | 获取 AgentOS 就绪状态。 |
-| `registerBundle(bundle)` | `AppBundle` | 注册 app bundle，在内部保存 bearer token，并返回 token 元信息。 |
+| `registerBundle(bundle)` | `AppBundle` | 注册 app bundle，可声明 `opentoolServers`；内部保存 bearer token，并返回 token 与 OpenTool 同步状态。 |
 | `subscribe(handler, options?)` | `AgentOSEventHandler`、`AgentOSSubscribeOptions` | 使用 handler 订阅 AppKit SSE 事件。 |
 | `connectionEvents` | `Subscription<AgentOSSubscribeConnectionEvent>` | 监听 AppKit SSE 连接状态变化。 |
 | `connectionStatus` | `AgentOSSubscribeConnectionStatus \| undefined` | 获取最近一次 AppKit SSE 连接状态。 |
@@ -295,7 +308,7 @@ function-call 及 callback handler；缺失或为空时回退到外层 root chat
 | 方法 | 参数 | 说明 |
 | --- | --- | --- |
 | `onWelcome(welcome)` | `welcome` | 接收 `welcome` 事件。 |
-| `onCallApp(call)` | `call` | 接收 `callApp` 事件。 |
+| `onAppEvent(event)` | `AppEvent` | 接收异步的 `toolkit.provision.succeeded` 和 `toolkit.provision.failed` 通知。 |
 | `onDone()` | 无 | SSE 流结束时触发。 |
 | `onError(error)` | `error` | SSE 流异常时触发。 |
 
@@ -308,13 +321,22 @@ const sdk = new AgentOSSDK({ baseUrl: 'http://localhost:8888' });
 
 await sdk.agentos.registerBundle({
   bundleId: 'com.demo.app',
-  appGroupId: 'com.demo.group'
+  appGroupId: 'com.demo.group',
+  opentoolServers: [
+    { ref: 'websearch', name: 'opentool-server-websearch' }
+  ]
 });
 await sdk.agentos.subscribe(myHandler); // app 启动
 
 // app 停止/释放
 await sdk.dispose();
 ```
+
+每个 OpenTool 声明包含 App 内稳定的 `ref` 和 daemon 中的 server `name`。
+register 返回状态为 `running`、`starting` 或 `notFound`，只有 `running`
+带可调用的 tool `id`。`starting` 会继续在后台拉起，最终成功或失败都通过
+`onAppEvent` 返回。应以 `toolkit.provision.succeeded` 及其中的 `id` 作为工具
+正式可调用的时点。自动刷新 token 时，SDK 也会重新提交同一组 OpenTool 声明。
 
 ### AgentKit Schema 说明
 

@@ -51,7 +51,12 @@ import {
 ## Usage
 
 ```ts
-import { AgentOSEventHandler, AgentOSSDK } from 'agentos-sdk-ts';
+import {
+  AgentOSEventHandler,
+  AgentOSSDK,
+  isOpenToolProvisionFailedEvent,
+  isOpenToolProvisionSucceededEvent
+} from 'agentos-sdk-ts';
 
 async function main() {
   const sdk = new AgentOSSDK();
@@ -61,9 +66,13 @@ async function main() {
 
   const registration = await sdk.agentos.registerBundle({
     bundleId: 'com.demo.app',
-    appGroupId: 'com.demo.group'
+    appGroupId: 'com.demo.group',
+    opentoolServers: [
+      { ref: 'websearch', name: 'opentool-server-websearch' }
+    ]
   });
   console.log('App token:', registration.token);
+  console.log('OpenTool registration:', registration.opentoolServers);
 
   await sdk.agentos.subscribe(new DemoEventHandler());
 }
@@ -73,8 +82,12 @@ class DemoEventHandler extends AgentOSEventHandler {
     console.log('Welcome bundleId:', welcome.bundleId);
   }
 
-  async onCallApp(call) {
-    console.log('CallApp bundleId:', call.bundleId);
+  async onAppEvent(event) {
+    if (isOpenToolProvisionSucceededEvent(event)) {
+      console.log(`OpenTool ${event.data.ref} is ready:`, event.data.id);
+    } else if (isOpenToolProvisionFailedEvent(event)) {
+      console.error(`OpenTool ${event.data.ref} failed:`, event.data.error);
+    }
   }
 
   async onDone() {
@@ -210,7 +223,7 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 | `getVersion()` | none | Fetches AgentOS service version. |
 | `getRoot()` | none | Fetches AgentOS gateway metadata. |
 | `getReady()` | none | Fetches AgentOS readiness status. |
-| `registerBundle(bundle)` | `AppBundle` | Registers an app bundle, stores the bearer token internally, and returns token metadata. |
+| `registerBundle(bundle)` | `AppBundle` | Registers an app bundle with optional `opentoolServers`, stores the bearer token internally, and returns token plus synchronous OpenTool status. |
 | `subscribe(handler, options?)` | `AgentOSEventHandler`, `AgentOSSubscribeOptions` | Subscribes to AppKit SSE events using a handler implementation. |
 | `connectionEvents` | `Subscription<AgentOSSubscribeConnectionEvent>` | Emits AppKit SSE connection status changes. |
 | `connectionStatus` | `AgentOSSubscribeConnectionStatus \| undefined` | Returns the latest known AppKit SSE connection status. |
@@ -303,7 +316,7 @@ explicit Node-only subpaths:
 | Method | Parameters | Description |
 | --- | --- | --- |
 | `onWelcome(welcome)` | `welcome` | Receives `welcome` events. |
-| `onCallApp(call)` | `call` | Receives `callApp` events. |
+| `onAppEvent(event)` | `AppEvent` | Receives asynchronous `toolkit.provision.succeeded` and `toolkit.provision.failed` notifications. |
 | `onDone()` | none | Called when the SSE stream ends. |
 | `onError(error)` | `error` | Called when the SSE stream errors. |
 
@@ -316,13 +329,24 @@ const sdk = new AgentOSSDK({ baseUrl: 'http://localhost:8888' });
 
 await sdk.agentos.registerBundle({
   bundleId: 'com.demo.app',
-  appGroupId: 'com.demo.group'
+  appGroupId: 'com.demo.group',
+  opentoolServers: [
+    { ref: 'websearch', name: 'opentool-server-websearch' }
+  ]
 });
 await sdk.agentos.subscribe(myHandler); // app start
 
 // app stop/dispose
 await sdk.dispose();
 ```
+
+Each OpenTool declaration has an app-stable `ref` and a daemon server `name`.
+The register result status is `running`, `starting`, or `notFound`; only
+`running` includes a callable tool `id`. A `starting` server continues in the
+background. Its eventual success or failure arrives through `onAppEvent`.
+Treat `toolkit.provision.succeeded` and its returned `id` as the point when the
+tool becomes callable. Automatic token refresh re-registers the same OpenTool
+declarations.
 
 ### AgentKit Schema Notes
 

@@ -18,14 +18,18 @@ async function main() {
 
   /// HTTP:
   /// POST http://localhost:8888/appkit/register
-  /// Body: {"bundleId":"com.mydomain.myapp","appGroupId":"com.mydomain.shared"}
+  /// Body: {"bundleId":"com.mydomain.myapp","appGroupId":"com.mydomain.shared","opentoolServers":[{"ref":"websearch","name":"opentool-server-websearch"}]}
   const registration = await sdk.agentos.registerBundle({
     bundleId,
-    appGroupId: 'com.mydomain.shared'
+    appGroupId: 'com.mydomain.shared',
+    opentoolServers: [
+      { ref: 'websearch', name: 'opentool-server-websearch' }
+    ]
   });
   console.log(
     `Registered bundle (bundleId: ${registration.bundleId}, appGroupId: ${registration.appGroupId})`
   );
+  console.log('OpenTool registration:', registration.opentoolServers ?? []);
 
   sdk.agentos.connectionEvents.subscribe((event) => {
     console.log(
@@ -83,8 +87,12 @@ class DemoEventHandler extends AgentOSEventHandler {
     console.log('Welcome bundleId:', welcome.bundleId);
   }
 
-  async onCallApp(call) {
-    console.log(`CallApp event for ${call.bundleId}:`, call.contentList);
+  async onAppEvent(event) {
+    if (event.type === 'toolkit.provision.succeeded') {
+      console.log(`OpenTool ${event.data.ref} is ready:`, event.data.id);
+    } else if (event.type === 'toolkit.provision.failed') {
+      console.error(`OpenTool ${event.data.ref} failed:`, event.data.error);
+    }
   }
 
   async onDone() {
