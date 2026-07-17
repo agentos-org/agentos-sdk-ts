@@ -1333,7 +1333,7 @@ test('modelkit listModels normalizes task, capabilities, and remote flags', asyn
             alias: 'qwen2.5-vl-7b',
             task: 'chat',
             input: ['text', 'image'],
-            capabilities: { vision: true },
+            capabilities: { vision: true, reasoning: true },
             contextWindowSize: 32768
           },
           {
@@ -1341,6 +1341,7 @@ test('modelkit listModels normalizes task, capabilities, and remote flags', asyn
             name: 'Embedder',
             alias: 'embed-1',
             task: 'embedding',
+            capabilities: { reasoning: false },
             isRemote: true,
             isCustom: true
           }
@@ -1356,16 +1357,20 @@ test('modelkit listModels normalizes task, capabilities, and remote flags', asyn
   assert.equal(models[0].id, 'qwen3-8b');
   assert.equal(models[0].task, 'chat');
   assert.equal(models[0].capabilities.vision, false);
+  assert.equal(models[0].capabilities.reasoning, false);
   assert.equal(models[0].isRemote, false);
   assert.equal(models[1].capabilities.vision, true);
+  assert.equal(models[1].capabilities.reasoning, true);
   assert.deepEqual(models[1].input, ['text', 'image']);
   assert.equal(models[2].id, 'embed-1');
   assert.equal(models[2].task, 'embedding');
+  assert.equal(models[2].capabilities.reasoning, false);
   assert.equal(models[2].isRemote, true);
   assert.equal(models[2].isCustom, true);
 
   const chatModels = await sdk.modelkit.listModelsByTask('chat');
   assert.deepEqual(chatModels.map((m) => m.id), ['qwen3-8b', 'qwen2.5-vl-7b']);
+  assert.deepEqual(chatModels.map((m) => m.capabilities.reasoning), [false, true]);
 });
 
 test('agentos bridge helpers detect injected mobile bridge and read context', async () => {

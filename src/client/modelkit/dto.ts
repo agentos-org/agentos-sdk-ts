@@ -29,6 +29,7 @@ export interface ModelCapabilities {
   vision: boolean;
   tool_call: boolean;
   stream: boolean;
+  reasoning: boolean;
 }
 
 /** Model descriptor returned by `/modelkit/models`. */

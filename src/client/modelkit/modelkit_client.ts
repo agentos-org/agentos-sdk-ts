@@ -249,7 +249,8 @@ function normalizeModelInfo(item: Record<string, unknown>): ModelInfo {
     capabilities: {
       vision: Boolean(rawCaps.vision),
       tool_call: Boolean(rawCaps.tool_call),
-      stream: rawCaps.stream === undefined ? true : Boolean(rawCaps.stream)
+      stream: rawCaps.stream === undefined ? true : Boolean(rawCaps.stream),
+      reasoning: Boolean(rawCaps.reasoning)
     },
     isRemote: Boolean(item.isRemote),
     isCustom: Boolean(item.isCustom)
