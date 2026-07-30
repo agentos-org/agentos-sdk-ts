@@ -46,6 +46,16 @@ export interface Capability extends SimpleCapability {
   llmConfigList?: LLMConfig[];
   enableThinking?: boolean;
   toolReturnPackMinLength?: number;
+  /** Maximum LLM requests per tool-enabled task. Server default: 64. */
+  maxLlmRequests?: number;
+  /** Maximum tool-call rounds per task. Server default: 16. */
+  maxToolRounds?: number;
+  /** Maximum total tool calls per task. Server default: 64. */
+  maxToolCalls?: number;
+  /** Maximum consecutive rounds with identical tool calls. Server default: 3. */
+  maxConsecutiveIdenticalToolRounds?: number;
+  /** Maximum duration in seconds for a tool-enabled task. Server default: 300. */
+  maxTaskDurationSeconds?: number;
 }
 
 export function normalizeLLMConfig(config?: LLMConfig): LLMConfig | undefined {

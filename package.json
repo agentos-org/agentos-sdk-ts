@@ -1,6 +1,6 @@
 {
   "name": "agentos-sdk-ts",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "TypeScript SDK for AgentOS APIs and clients.",
   "license": "MIT",
   "repository": {
@@ -43,7 +43,7 @@
     "build": "rollup -c",
     "clean": "rm -rf dist",
     "test": "npm run build && node --test ./test/sdk.test.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "verify": "npm run typecheck && npm test",
     "prepublishOnly": "npm run clean && npm run build"
   },

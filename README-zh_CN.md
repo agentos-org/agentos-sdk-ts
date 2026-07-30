@@ -351,6 +351,30 @@ register 返回状态为 `running`、`starting` 或 `notFound`，只有 `running
 - `Capability` 支持：
   - `llmConfigList`
   - `toolReturnPackMinLength`
+  - `maxLlmRequests`：单个工具型任务的大模型请求次数上限（服务端默认值：`64`）
+  - `maxToolRounds`：单个任务的工具调用轮数上限（服务端默认值：`16`）
+  - `maxToolCalls`：单个任务的工具调用总数上限（服务端默认值：`64`）
+  - `maxConsecutiveIdenticalToolRounds`：连续相同工具调用轮数上限（服务端默认值：`3`）
+  - `maxTaskDurationSeconds`：单个工具型任务最长执行秒数（服务端默认值：`300`）
+
+以上五个执行限制字段均为可选字段，并由 SDK 原样透传。SDK 不会注入服务端
+默认值，也不会改写 `0` 或负数；默认值和校验均由服务端处理。
+
+```ts
+import type { Capability } from 'agentos-sdk-ts';
+
+const capability: Capability = {
+  systemPrompt: '你是一个助手',
+  maxLlmRequests: 32,
+  maxToolRounds: 8,
+  maxToolCalls: 20,
+  maxConsecutiveIdenticalToolRounds: 2,
+  maxTaskDurationSeconds: 120
+};
+
+await sdk.agentkit.initSession({ capability });
+```
+
 - `AgentMessage.completions` 支持 `limits`：
   - `maxTokens`
   - `contextWindowSize`

@@ -361,6 +361,31 @@ declarations.
 - `Capability` supports:
   - `llmConfigList`
   - `toolReturnPackMinLength`
+  - `maxLlmRequests`: maximum LLM requests per tool-enabled task (server default: `64`)
+  - `maxToolRounds`: maximum tool-call rounds per task (server default: `16`)
+  - `maxToolCalls`: maximum total tool calls per task (server default: `64`)
+  - `maxConsecutiveIdenticalToolRounds`: maximum consecutive rounds with identical tool calls (server default: `3`)
+  - `maxTaskDurationSeconds`: maximum duration in seconds for a tool-enabled task (server default: `300`)
+
+The five execution-limit fields are optional and passed through unchanged. The
+SDK does not inject their server defaults or rewrite zero or negative values;
+the server handles defaults and validation.
+
+```ts
+import type { Capability } from 'agentos-sdk-ts';
+
+const capability: Capability = {
+  systemPrompt: 'You are an assistant.',
+  maxLlmRequests: 32,
+  maxToolRounds: 8,
+  maxToolCalls: 20,
+  maxConsecutiveIdenticalToolRounds: 2,
+  maxTaskDurationSeconds: 120
+};
+
+await sdk.agentkit.initSession({ capability });
+```
+
 - `AgentMessage.completions` supports `limits`:
   - `maxTokens`
   - `contextWindowSize`

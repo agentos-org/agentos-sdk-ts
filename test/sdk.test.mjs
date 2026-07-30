@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import {
   AgentMessageHandler,
@@ -17,6 +17,7 @@ import {
   isOpenToolProvisionFailedEvent,
   isOpenToolProvisionSucceededEvent,
   isAgentOSBridgeAvailable,
+  normalizeCapability,
   parseSse
 } from '../dist/index.js';
 import {
@@ -1230,6 +1231,126 @@ test('agentkit normalizes llmConfig defaults and legacy alias fields in outgoing
   assert.equal(captured.chatBody.llmConfig.supportsReasoning, true);
 });
 
+test('agentkit passes capability execution limits through without client defaults or validation', async () => {
+  const executionLimits = {
+    maxLlmRequests: 32,
+    maxToolRounds: 8,
+    maxToolCalls: 20,
+    maxConsecutiveIdenticalToolRounds: 2,
+    maxTaskDurationSeconds: 120
+  };
+  const nonPositiveExecutionLimits = {
+    maxLlmRequests: 0,
+    maxToolRounds: -1,
+    maxToolCalls: 0,
+    maxConsecutiveIdenticalToolRounds: -2,
+    maxTaskDurationSeconds: 0
+  };
+  const captured = {
+    initSessionBodies: [],
+    createAgentBody: null,
+    updateAgentBody: null
+  };
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/appkit/register') {
+        return jsonResponse({ token: 'token-1' });
+      }
+      assert.equal(request.headers.authorization, 'Bearer token-1');
+      if (request.pathname === '/agentkit/initSession') {
+        captured.initSessionBodies.push(request.body);
+        return jsonResponse({ sessionId: `session-${captured.initSessionBodies.length}` });
+      }
+      if (request.pathname === '/agentkit/agent/create') {
+        captured.createAgentBody = request.body;
+        return jsonResponse({ agentId: 'agent-1' });
+      }
+      if (request.pathname === '/agentkit/agent/update') {
+        captured.updateAgentBody = request.body;
+        return jsonResponse({ agentId: 'agent-1' });
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+
+  await sdk.agentos.registerBundle({ bundleId: 'com.demo.execution-limits' });
+  await sdk.agentkit.initSession({
+    capability: {
+      systemPrompt: 'init limits',
+      ...executionLimits
+    }
+  });
+  await sdk.agentkit.createAgent({
+    agent: {
+      name: 'limited agent',
+      capability: {
+        systemPrompt: 'create limits',
+        ...executionLimits
+      }
+    }
+  });
+  await sdk.agentkit.updateAgent({
+    agentId: 'agent-1',
+    agent: {
+      name: 'updated limited agent',
+      capability: {
+        systemPrompt: 'update limits',
+        ...executionLimits
+      }
+    }
+  });
+  await sdk.agentkit.initSession({
+    capability: {
+      systemPrompt: 'server defaults'
+    }
+  });
+  await sdk.agentkit.initSession({
+    capability: {
+      systemPrompt: 'non-positive limits',
+      ...nonPositiveExecutionLimits
+    }
+  });
+
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(executionLimits).map((key) => [key, captured.initSessionBodies[0][key]])),
+    executionLimits
+  );
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(executionLimits).map((key) => [key, captured.createAgentBody.capability[key]])),
+    executionLimits
+  );
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(executionLimits).map((key) => [key, captured.updateAgentBody.capability[key]])),
+    executionLimits
+  );
+  for (const key of Object.keys(executionLimits)) {
+    assert.equal(key in captured.initSessionBodies[1], false);
+  }
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(nonPositiveExecutionLimits).map((key) => [
+      key,
+      captured.initSessionBodies[2][key]
+    ])),
+    nonPositiveExecutionLimits
+  );
+
+  const normalizedWithoutLimits = normalizeCapability({ systemPrompt: 'server defaults' });
+  for (const key of Object.keys(executionLimits)) {
+    assert.equal(key in normalizedWithoutLimits, false);
+  }
+  const normalizedNonPositiveLimits = normalizeCapability({
+    systemPrompt: 'non-positive limits',
+    ...nonPositiveExecutionLimits
+  });
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(nonPositiveExecutionLimits).map((key) => [
+      key,
+      normalizedNonPositiveLimits[key]
+    ])),
+    nonPositiveExecutionLimits
+  );
+});
+
 test('modelkit chat stream yields parsed events until done', async () => {
   const sdk = new AgentOSSDK({
     fetch: createMockFetch((request) => {
@@ -1924,6 +2045,22 @@ test('dart-like structured source layout exists in the TypeScript project', () =
 
   for (const file of expectedFiles) {
     assert.equal(existsSync(new URL(file, import.meta.url)), true, `${file} should exist`);
+  }
+});
+
+test('generated declarations expose capability execution limits', () => {
+  const declaration = readFileSync(
+    new URL('../dist/client/agentkit/capability_dto.d.ts', import.meta.url),
+    'utf8'
+  );
+  for (const field of [
+    'maxLlmRequests',
+    'maxToolRounds',
+    'maxToolCalls',
+    'maxConsecutiveIdenticalToolRounds',
+    'maxTaskDurationSeconds'
+  ]) {
+    assert.match(declaration, new RegExp(`${field}\\?: number;`));
   }
 });
 
