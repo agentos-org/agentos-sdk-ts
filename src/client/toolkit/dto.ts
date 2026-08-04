@@ -1,4 +1,31 @@
 export type { OpenTool } from '../../browser_opentool';
+import type { FunctionCall } from '../../browser_opentool';
+
+export type ToolKitKnownStreamEvent =
+  | 'START'
+  | 'DATA'
+  | 'ERROR'
+  | 'DONE'
+  | 'start'
+  | 'data'
+  | 'error'
+  | 'done';
+
+export type ToolKitStreamEventType = ToolKitKnownStreamEvent | (string & {});
+
+export interface ToolKitStreamEvent {
+  event: ToolKitStreamEventType;
+  data: Record<string, unknown>;
+}
+
+export interface ToolKitCallOptions {
+  toolId: string;
+  functionCall: FunctionCall;
+}
+
+export interface ToolKitStreamCallOptions extends ToolKitCallOptions {
+  signal?: AbortSignal;
+}
 
 export interface ToolServerDto {
   repo: string;

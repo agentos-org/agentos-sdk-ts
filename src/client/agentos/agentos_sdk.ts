@@ -36,6 +36,11 @@ import { ModelKitClient } from '../modelkit/modelkit_client';
 import { ModelTask } from '../modelkit/dto';
 import { SystemKitClient } from '../systemkit/systemkit_client';
 import { ToolKitClient } from '../toolkit/toolkit_client';
+import type {
+  ToolKitCallOptions,
+  ToolKitStreamCallOptions,
+  ToolKitStreamEvent
+} from '../toolkit/dto';
 import { ApiClient, ApiError, Subscription, asJsonMap, ensureError } from '../../utils';
 import { getAgentOSBridgeTransportDefaults } from '../../bridge';
 
@@ -779,13 +784,39 @@ export class ToolKitModule {
   constructor(private readonly client: AgentOSSDK) {}
 
   listTool(all?: string) {
-    return this.client.toolKit.listTool(all);
+    return this.client.withAppAuthRetry((token) => this.client.toolKit.listTool(all, token));
   }
 
   loadTool(toolId: string) {
-    return this.client.toolKit.loadTool(toolId);
+    return this.client.withAppAuthRetry((token) => this.client.toolKit.loadTool(toolId, token));
   }
 
+  callTool(options: ToolKitCallOptions): Promise<ToolReturn> {
+    return this.client.withAppAuthRetry((token) =>
+      this.client.toolKit.callTool(token, options.toolId, options.functionCall)
+    );
+  }
+
+  streamCallTool(options: ToolKitStreamCallOptions): AsyncGenerator<ToolKitStreamEvent> {
+    const client = this.client;
+    return (async function* (): AsyncGenerator<ToolKitStreamEvent> {
+      const stream = await client.withAppAuthRetry((token) =>
+        client.toolKit.openStreamCallTool(
+          token,
+          options.toolId,
+          options.functionCall,
+          { signal: options.signal }
+        )
+      );
+      try {
+        yield* stream;
+      } finally {
+        await stream.return(undefined);
+      }
+    })();
+  }
+
+  /** @deprecated Not exposed by the AgentOS API gateway ToolKit API. */
   subscribeToolEvents(options: { daemonApiKey: string; snapshot?: boolean; signal?: AbortSignal }) {
     return this.client.toolKit.subscribeToolEvents(options.daemonApiKey, options.snapshot ?? true, options.signal);
   }

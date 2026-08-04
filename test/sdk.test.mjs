@@ -8,6 +8,7 @@ import {
   AgentOSEventHandler,
   AgentOSSDK,
   AgentOSSubscribeConnectionStatus,
+  ApiClient,
   createAgentOSBridgeFetch,
   CronKitClient,
   EventType,
@@ -18,7 +19,8 @@ import {
   isOpenToolProvisionSucceededEvent,
   isAgentOSBridgeAvailable,
   normalizeCapability,
-  parseSse
+  parseSse,
+  ToolKitClient
 } from '../dist/index.js';
 import {
   DAEMON_DEFAULT_PREFIX,
@@ -2062,6 +2064,246 @@ test('generated declarations expose capability execution limits', () => {
   ]) {
     assert.match(declaration, new RegExp(`${field}\\?: number;`));
   }
+});
+
+test('toolkit callTool uses the AgentOS gateway with encoded tool id and AppKit auth', async () => {
+  const requests = [];
+  const client = new ToolKitClient(new ApiClient({
+    baseUrl: 'http://example.local',
+    fetch: createMockFetch((request) => {
+      requests.push(request);
+      return jsonResponse({ id: 'call-1', result: { ok: true } });
+    })
+  }));
+
+  const result = await client.callTool('app-token', 'web/search #1', {
+    id: 'call-1',
+    name: 'websearch',
+    arguments: { query: 'OpenMAIC', max_results: 5 },
+    ignored: 'must not be serialized'
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, 'POST');
+  assert.equal(requests[0].pathname, '/toolkit/web%2Fsearch%20%231/call');
+  assert.equal(requests[0].headers.authorization, 'Bearer app-token');
+  assert.equal(requests[0].headers['x-tool-api-key'], undefined);
+  assert.deepEqual(requests[0].body, {
+    id: 'call-1',
+    name: 'websearch',
+    arguments: { query: 'OpenMAIC', max_results: 5 }
+  });
+  assert.equal(result.id, 'call-1');
+  assert.deepEqual(result.result, { ok: true });
+  assert.equal(requests.some((request) => request.pathname === '/opentool/call'), false);
+});
+
+test('toolkit module refreshes the AppKit token and retries callTool after 401', async () => {
+  let registerCount = 0;
+  const callTokens = [];
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/appkit/register') {
+        registerCount += 1;
+        return jsonResponse({ token: `token-${registerCount}` });
+      }
+      if (request.pathname === '/toolkit/tool-1/call') {
+        callTokens.push(request.headers.authorization);
+        if (request.headers.authorization === 'Bearer token-1') {
+          return jsonResponse({ error: 'unauthorized' }, 401);
+        }
+        return jsonResponse({ id: 'call-1', result: { retried: true } });
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+  await sdk.agentos.registerBundle({ bundleId: 'com.demo.toolkit-call' });
+
+  const result = await sdk.toolkit.callTool({
+    toolId: 'tool-1',
+    functionCall: { id: 'call-1', name: 'status', arguments: {} }
+  });
+
+  assert.deepEqual(result.result, { retried: true });
+  assert.equal(registerCount, 2);
+  assert.deepEqual(callTokens, ['Bearer token-1', 'Bearer token-2']);
+});
+
+test('toolkit streamCallTool parses typed AgentOS SSE events', async () => {
+  const requests = [];
+  const client = new ToolKitClient(new ApiClient({
+    baseUrl: 'http://example.local',
+    fetch: createMockFetch((request) => {
+      requests.push(request);
+      return sseResponse([
+        'event: START\ndata: {"started":true}\n\n',
+        'event: DATA\ndata: {"value":1}\n\n',
+        'event: ERROR\ndata: {"message":"recoverable"}\n\n',
+        'event: DONE\ndata: {"done":true}\n\n'
+      ]);
+    })
+  }));
+
+  const events = [];
+  for await (const event of client.streamCallTool('app-token', 'tool/stream', {
+    id: 'call-stream',
+    name: 'status',
+    arguments: { depth: 2 }
+  })) {
+    events.push(event);
+  }
+
+  assert.equal(requests[0].method, 'POST');
+  assert.equal(requests[0].pathname, '/toolkit/tool%2Fstream/streamCall');
+  assert.equal(requests[0].headers.authorization, 'Bearer app-token');
+  assert.deepEqual(requests[0].body, {
+    id: 'call-stream',
+    name: 'status',
+    arguments: { depth: 2 }
+  });
+  assert.deepEqual(events, [
+    { event: 'START', data: { started: true } },
+    { event: 'DATA', data: { value: 1 } },
+    { event: 'ERROR', data: { message: 'recoverable' } },
+    { event: 'DONE', data: { done: true } }
+  ]);
+});
+
+test('toolkit module retries stream setup after a 401', async () => {
+  let registerCount = 0;
+  const streamTokens = [];
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/appkit/register') {
+        registerCount += 1;
+        return jsonResponse({ token: `stream-token-${registerCount}` });
+      }
+      if (request.pathname === '/toolkit/tool-1/streamCall') {
+        streamTokens.push(request.headers.authorization);
+        if (request.headers.authorization === 'Bearer stream-token-1') {
+          return jsonResponse({ error: 'forbidden' }, 403);
+        }
+        return sseResponse(['event: DONE\ndata: {"ok":true}\n\n']);
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+  await sdk.agentos.registerBundle({ bundleId: 'com.demo.toolkit-stream' });
+
+  const events = [];
+  for await (const event of sdk.toolkit.streamCallTool({
+    toolId: 'tool-1',
+    functionCall: { id: 'call-1', name: 'status', arguments: {} }
+  })) {
+    events.push(event);
+  }
+
+  assert.deepEqual(events, [{ event: 'DONE', data: { ok: true } }]);
+  assert.equal(registerCount, 2);
+  assert.deepEqual(streamTokens, ['Bearer stream-token-1', 'Bearer stream-token-2']);
+});
+
+test('toolkit streamCallTool propagates AbortSignal cancellation', async () => {
+  let responseController;
+  let requestAborted = false;
+  const client = new ToolKitClient(new ApiClient({
+    baseUrl: 'http://example.local',
+    fetch: async (_input, init = {}) => {
+      const body = new ReadableStream({
+        start(controller) {
+          responseController = controller;
+          controller.enqueue(new TextEncoder().encode('event: DATA\ndata: {"value":1}\n\n'));
+        }
+      });
+      init.signal.addEventListener('abort', () => {
+        requestAborted = true;
+        try {
+          responseController.error(new DOMException('Aborted', 'AbortError'));
+        } catch {
+          // The reader may already be closed by the generator.
+        }
+      }, { once: true });
+      return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+    }
+  }));
+  const abortController = new AbortController();
+  const stream = client.streamCallTool(
+    'app-token',
+    'tool-1',
+    { id: 'call-1', name: 'status', arguments: {} },
+    { signal: abortController.signal }
+  );
+
+  assert.deepEqual(await stream.next(), {
+    done: false,
+    value: { event: 'DATA', data: { value: 1 } }
+  });
+  abortController.abort();
+  await assert.rejects(stream.next(), (error) => error?.name === 'AbortError');
+  assert.equal(requestAborted, true);
+});
+
+test('toolkit streamCallTool cancels the reader and aborts the request when closed early', async () => {
+  let readerCancelCount = 0;
+  let requestAborted = false;
+  const client = new ToolKitClient(new ApiClient({
+    baseUrl: 'http://example.local',
+    fetch: async (_input, init = {}) => {
+      init.signal.addEventListener('abort', () => {
+        requestAborted = true;
+      }, { once: true });
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('event: DATA\ndata: {"value":1}\n\n'));
+        },
+        cancel() {
+          readerCancelCount += 1;
+        }
+      }), { headers: { 'content-type': 'text/event-stream' } });
+    }
+  }));
+  const stream = client.streamCallTool(
+    'app-token',
+    'tool-1',
+    { id: 'call-1', name: 'status', arguments: {} }
+  );
+
+  assert.equal((await stream.next()).value.event, 'DATA');
+  await stream.return(undefined);
+
+  assert.equal(readerCancelCount, 1);
+  assert.equal(requestAborted, true);
+});
+
+test('toolkit call and stream reject malformed JSON responses with clear errors', async () => {
+  const callClient = new ToolKitClient(new ApiClient({
+    baseUrl: 'http://example.local',
+    fetch: async () => new Response('not-json', { status: 200 })
+  }));
+  await assert.rejects(
+    callClient.callTool('token', 'tool-1', { id: 'call-1', name: 'status', arguments: {} }),
+    /Expected JSON object but got string/
+  );
+
+  const invalidResultClient = new ToolKitClient(new ApiClient({
+    baseUrl: 'http://example.local',
+    fetch: async () => jsonResponse({ id: 'call-1', result: [] })
+  }));
+  await assert.rejects(
+    invalidResultClient.callTool('token', 'tool-1', { id: 'call-1', name: 'status', arguments: {} }),
+    /Invalid ToolReturn result/
+  );
+
+  const streamClient = new ToolKitClient(new ApiClient({
+    baseUrl: 'http://example.local',
+    fetch: async () => sseResponse(['event: DATA\ndata: not-json\n\n'])
+  }));
+  const stream = streamClient.streamCallTool(
+    'token',
+    'tool-1',
+    { id: 'call-1', name: 'status', arguments: {} }
+  );
+  await assert.rejects(stream.next(), /Invalid ToolKit SSE event "DATA"/);
 });
 
 function deferred() {

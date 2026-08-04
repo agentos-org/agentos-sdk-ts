@@ -301,7 +301,22 @@ chat session ID is used as a fallback.
 | --- | --- | --- |
 | `listTool(all?)` | `all` | Lists available tools from `/toolkit/list`, including tool server metadata such as `server.repo`, `server.name`, and `server.tag` when provided by the gateway. |
 | `loadTool(toolId)` | `toolId` | Loads an `OpenTool` definition from `/toolkit/{toolId}/load` and returns an `OpenTool` instance. |
-| `subscribeToolEvents({ daemonApiKey, snapshot, signal })` | `daemonApiKey`, `snapshot`, `signal` | Subscribes to `/toolkit/events` and streams `ToolLifecycleEventDto` updates. |
+| `callTool({ toolId, functionCall })` | `toolId`, `functionCall` | Calls a tool through the AgentOS gateway and returns `ToolReturn`. AppKit token refresh and retry are automatic. |
+| `streamCallTool({ toolId, functionCall, signal? })` | `toolId`, `functionCall`, `signal` | Streams typed `ToolKitStreamEvent` values through the AgentOS gateway and supports cancellation. |
+| `subscribeToolEvents({ daemonApiKey, snapshot, signal })` | `daemonApiKey`, `snapshot`, `signal` | Deprecated daemon lifecycle API; this endpoint is not exposed by the AgentOS API gateway. |
+
+```ts
+const result = await sdk.toolkit.callTool({
+  toolId: 'websearch',
+  functionCall: {
+    id: crypto.randomUUID(),
+    name: 'websearch',
+    arguments: { query: 'OpenMAIC', max_results: 5, summary_only: false },
+  },
+});
+
+console.log(result.result);
+```
 
 ### OpenTool Exports
 

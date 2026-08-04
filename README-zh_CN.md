@@ -294,7 +294,22 @@ function-call 及 callback handler；缺失或为空时回退到外层 root chat
 | --- | --- | --- |
 | `listTool(all?)` | `all` | 从 `/toolkit/list` 获取当前可用 tools 列表；当网关返回时，结果会包含 `server.repo`、`server.name`、`server.tag` 等 server 元数据。 |
 | `loadTool(toolId)` | `toolId` | 从 `/toolkit/{toolId}/load` 读取 `OpenTool` 定义，并返回 `OpenTool` 实例。 |
-| `subscribeToolEvents({ daemonApiKey, snapshot, signal })` | `daemonApiKey`、`snapshot`、`signal` | 订阅 `/toolkit/events`，持续接收 `ToolLifecycleEventDto` 生命周期事件。 |
+| `callTool({ toolId, functionCall })` | `toolId`、`functionCall` | 通过 AgentOS 网关调用工具函数并返回 `ToolReturn`。自动使用 AppKit token，401/403 时刷新并重试。 |
+| `streamCallTool({ toolId, functionCall, signal? })` | `toolId`、`functionCall`、`signal` | 通过 AgentOS 网关流式调用工具函数，返回 `AsyncGenerator<ToolKitStreamEvent>` 并支持取消。 |
+| `subscribeToolEvents({ daemonApiKey, snapshot, signal })` | `daemonApiKey`、`snapshot`、`signal` | 已弃用的 daemon 生命周期接口；AgentOS API 网关不公开该端点。 |
+
+```ts
+const result = await sdk.toolkit.callTool({
+  toolId: 'websearch',
+  functionCall: {
+    id: crypto.randomUUID(),
+    name: 'websearch',
+    arguments: { query: 'OpenMAIC', max_results: 5, summary_only: false },
+  },
+});
+
+console.log(result.result);
+```
 
 ### OpenTool 导出
 
