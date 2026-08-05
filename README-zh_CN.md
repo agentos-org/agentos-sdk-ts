@@ -9,10 +9,13 @@ CronKit、ModelKit 和 ToolKit 发现接口。推荐使用统一的 `AgentOSSDK`
 - Root API：版本查询
 - AgentKit API：Agent CRUD、会话初始化、chat 流式/单次、历史记录、stop/clear、回调
 - AppKit API：bundle 注册与 SSE 订阅
+- AuthKit API：OAuth 授权流、token 交换、用户信息获取、授权管理
 - CronKit API：定时任务 CRUD、运行记录与调度器控制
+- DiscoveryKit API：附近设备发现、自身信息获取、设备注册/注销、SSE 设备事件流
 - ModelKit API：基于任务的模型列表，以及 `/modelkit/*` 下的 OpenAI 兼容
   chat / embedding / asr / tts 客户端
 - ToolKit API：tool 列表、tool 定义读取与 tool 生命周期事件订阅
+- TransferKit API：设备间文件传输（发送/接收/进度流/取消/应答）、接收策略、传输历史管理
 
 ## 快速开始
 
@@ -205,9 +208,12 @@ new AgentOSSDK({
 | --- | --- | --- |
 | `agentos` | `AgentOSModule` | Root/AppKit 相关接口，内部处理 token。 |
 | `agentkit` | `AgentKitModule` | AgentKit 相关接口，内部处理 token。 |
+| `authkit` | `AuthKitModule` | AuthKit OAuth 授权接口，内部处理 token。 |
 | `cronkit` | `CronKitModule` | CronKit 任务管理接口，内部处理 token。 |
+| `discoverykit` | `DiscoveryKitModule` | DiscoveryKit 附近设备发现接口，内部处理 token。 |
 | `modelkit` | `ModelKitModule` | ModelKit 基于任务的模型列表与 chat / embedding / asr / tts 客户端。 |
 | `toolkit` | `ToolKitModule` | ToolKit 发现接口与 tool 生命周期事件订阅。 |
+| `transferkit` | `TransferKitModule` | TransferKit 文件传输接口，内部处理 token。 |
 | `dispose()` | `Promise<void>` | 释放 SDK 资源并取消当前 AppKit 订阅。 |
 
 ### AgentOSModule（`sdk.agentos`）
@@ -309,6 +315,246 @@ const result = await sdk.toolkit.callTool({
 });
 
 console.log(result.result);
+```
+
+### AuthKitModule（`sdk.authkit`）
+
+AuthKit 为第三方 App 提供类 OAuth 授权流程。App 发起授权请求后，AgentOS Desktop
+弹出用户确认对话框；用户同意后 App 可用 authCode 换取 accessToken，进而获取用户信息。
+
+**授权状态枚举（`AuthRequestStatus`）：**
+
+| 值 | 说明 |
+| --- | --- |
+| `pending` | 等待用户确认 |
+| `granted` | 用户已授权 |
+| `denied` | 用户拒绝授权 |
+| `timeout` | 请求超时（3 分钟） |
+
+**Token 验证结果枚举（`TokenValidationResult`）：**
+
+| 值 | 说明 |
+| --- | --- |
+| `valid` | token 有效且 AgentOS 已登录 |
+| `invalidToken` | token 不识别 |
+| `authExpired` | AgentOS 用户已登出 |
+| `tokenRevoked` | 授权已被撤销 |
+
+| 方法 | 参数 | 说明 |
+| --- | --- | --- |
+| `authorize(request?)` | `{ scopes?: string[]; appName?: string }` | 发起授权请求。已授权的 App 直接返回 `granted` + `authCode`；首次授权返回 `pending`（HTTP 202）。 |
+| `getStatus(requestId)` | `requestId` | 轮询授权请求状态。 |
+| `exchangeToken(request)` | `{ authCode: string }` | 使用 authCode 换取 accessToken 和 userInfo。 |
+| `getUserInfo(accessToken)` | `accessToken` | 使用 accessToken 获取当前用户信息。 |
+| `revoke(request?)` | `{ bundleId?: string }` | 撤销指定 bundleId 的授权。 |
+| `listGrants()` | 无 | 列出所有已授权的 Grant。 |
+
+```ts
+const authResponse = await sdk.authkit.authorize({
+  scopes: ['profile'],
+  appName: 'My Third-Party App'
+});
+
+if (authResponse.status === 'granted') {
+  const tokenInfo = await sdk.authkit.exchangeToken({
+    authCode: authResponse.authCode!
+  });
+  console.log('Access Token:', tokenInfo.accessToken);
+  console.log('User:', tokenInfo.userInfo.name);
+}
+```
+
+**AuthKitGrant 结构：**
+
+```ts
+interface AuthKitGrant {
+  bundleId: string;
+  appName?: string;
+  userId?: string;
+  scopes: string[];
+  grantedAt: string; // ISO 8601
+}
+```
+
+### DiscoveryKitModule（`sdk.discoverykit`）
+
+DiscoveryKit 用于发现附近的 AgentOS 设备，支持设备级和 App 级扫描。
+
+**设备事件类型枚举（`PeerDeviceEventType`）：**
+
+| 值 | 说明 |
+| --- | --- |
+| `joined` | 新设备上线 |
+| `left` | 设备离线 |
+| `updated` | 设备信息更新 |
+
+**文件接收策略枚举（`FileReceivePolicy`）：**
+
+| 值 | 说明 |
+| --- | --- |
+| `autoAccept` | 自动接收文件 |
+| `requireConfirm` | 需要用户确认 |
+
+| 方法 | 参数 | 说明 |
+| --- | --- | --- |
+| `getPeers()` | 无 | 获取附近设备列表。App 级扫描只返回同 bundleId 注册的设备。 |
+| `streamPeers(signal?)` | `AbortSignal` | SSE 订阅设备变化事件（`peer.joined` / `peer.left` / `peer.updated`）。 |
+| `getSelf()` | 无 | 获取自身设备信息及 nearbyTransfer 状态。 |
+| `register(request?)` | `{ receivePolicy?: FileReceivePolicy }` | 将当前 App 注册到设备发现广播中。 |
+| `unregister()` | 无 | 从设备发现广播中注销当前 App。 |
+
+```ts
+await sdk.discoverykit.register({ receivePolicy: 'autoAccept' });
+
+const peers = await sdk.discoverykit.getPeers();
+console.log('Nearby devices:', peers.length);
+
+const self = await sdk.discoverykit.getSelf();
+console.log('Transfer enabled:', self.nearbyTransferEnabled);
+```
+
+**PeerDevice 结构：**
+
+```ts
+interface PeerDevice {
+  deviceId: string;
+  name: string;
+  avatarUrl?: string;
+  deviceName: string;
+  deviceType: string;
+  host: string;
+  port: number;
+  online: boolean;
+  apps: PeerApp[];
+}
+```
+
+**PeerApp 结构：**
+
+```ts
+interface PeerApp {
+  bundleId?: string;
+  userId?: string;
+  username?: string;
+  appName?: string;
+  avatarUrl?: string;
+}
+```
+
+### TransferKitModule（`sdk.transferkit`）
+
+TransferKit 提供 AgentOS 设备之间的文件传输能力，包括发送、接收、进度追踪、
+取消和传输历史管理。
+
+**传输状态枚举（`TransferState`）：**
+
+| 值 | 说明 |
+| --- | --- |
+| `pending` | 等待开始 |
+| `preparing` | 准备中 |
+| `transferring` | 传输中 |
+| `completed` | 传输完成 |
+| `failed` | 传输失败 |
+| `cancelled` | 已取消 |
+
+**传输方向枚举（`TransferDirection`）：**
+
+| 值 | 说明 |
+| --- | --- |
+| `send` | 发送 |
+| `receive` | 接收 |
+
+**单文件传输状态枚举（`FileTransferState`）：**
+
+| 值 | 说明 |
+| --- | --- |
+| `pending` | 等待 |
+| `transferring` | 传输中 |
+| `completed` | 完成 |
+| `failed` | 失败 |
+
+| 方法 | 参数 | 说明 |
+| --- | --- | --- |
+| `send(request)` | `TransferSendRequest` | 向目标设备发送文件，返回 `TransferSession`。 |
+| `listTransfers()` | 无 | 列出当前 App 的所有传输会话。 |
+| `getStatus(transferId)` | `transferId` | 获取传输会话状态。 |
+| `streamProgress(transferId, signal?)` | `transferId`、`AbortSignal` | SSE 订阅传输进度，完成或失败后自动结束。 |
+| `cancel(transferId)` | `transferId` | 取消一个进行中的传输。 |
+| `respond(transferId, request)` | `transferId`、`{ accept: boolean }` | 对收到的传输请求进行接受/拒绝应答。 |
+| `receiveStream(signal?)` | `AbortSignal` | SSE 订阅入站文件传输事件（`file.received`）。 |
+| `setPolicy(request)` | `{ policy: string }` | 设置文件接收策略（`autoAccept` / `requireConfirm`）。 |
+| `getPolicy()` | 无 | 获取当前文件接收策略。 |
+| `addHistory(request)` | `AddHistoryRequest` | 添加一条传输历史记录。 |
+| `getHistory(query?)` | `{ deviceId?: string; userId?: string }` | 获取传输历史记录列表（最新在前）。 |
+| `deleteHistory(recordId, query?)` | `recordId`、`HistoryQuery` | 删除单条传输历史记录。 |
+| `clearHistory(query?)` | `HistoryQuery` | 清空传输历史。 |
+
+```ts
+const peers = await sdk.discoverykit.getPeers();
+const target = peers[0];
+
+const session = await sdk.transferkit.send({
+  targetDeviceId: target.deviceId,
+  files: [
+    { fileName: 'doc.pdf', size: 1024000, filePath: '/data/doc.pdf' }
+  ]
+});
+console.log('Transfer ID:', session.transferId);
+console.log('State:', session.state);
+
+// 流式追踪进度
+const progress = await sdk.transferkit.streamProgress(session.transferId);
+for await (const update of progress) {
+  console.log(`Progress: ${(update.progress * 100).toFixed(1)}%`);
+  if (update.state === 'completed' || update.state === 'failed') break;
+}
+```
+
+**TransferSession 结构：**
+
+```ts
+interface TransferSession {
+  transferId: string;
+  state: TransferState;
+  progress: number;      // 0.0 ~ 1.0
+  targetDeviceId: string;
+  bundleId: string;
+  userId?: string;
+  targetBundleId?: string;
+  files: TransferFileInfo[];
+  errorMessage?: string;
+}
+```
+
+**IncomingTransferEvent 结构：**
+
+```ts
+interface IncomingTransferEvent {
+  transferId: string;
+  fromDeviceId: string;
+  fromName: string;
+  sourceBundleId: string;
+  targetBundleId?: string;
+  autoAccepted: boolean;
+  files: ReceivedFileInfo[];
+}
+```
+
+**TransferHistoryRecord 结构：**
+
+```ts
+interface TransferHistoryRecord {
+  id: string;
+  direction: TransferDirection; // 'send' | 'receive'
+  peerDeviceId: string;
+  peerName: string;
+  peerAvatarUrl?: string;
+  files: TransferHistoryFile[];
+  totalSize: number;
+  state: TransferState;
+  timestamp: string; // ISO 8601
+  savedDir?: string;
+}
 ```
 
 ### OpenTool 导出
@@ -436,7 +682,7 @@ class MyHandler extends AgentMessageHandler {
 ## Token 处理
 
 - `agentos.registerBundle(...)` 会在 SDK 内部保存 bearer token。
-- `agentkit`、`agentos` 和 `cronkit` 请求会自动使用已保存 token。
+- `agentkit`、`agentos`、`authkit`、`cronkit`、`discoverykit`、`toolkit` 和 `transferkit` 请求会自动使用已保存 token。
 - 当 app token 过期时，SDK 会按相同 `bundleId` 和 `appGroupId` 自动重新注册一次后重试请求。
 
 ## 说明

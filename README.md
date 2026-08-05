@@ -9,10 +9,13 @@ CronKit, ModelKit, and ToolKit discovery endpoints. Use the unified
 - Root API: version check
 - AgentKit API: agent CRUD, session init, chat stream/simple, history, stop/clear, callbacks
 - AppKit API: bundle registration and SSE subscription
+- AuthKit API: OAuth-like authorization flow, token exchange, user info, grant management
 - CronKit API: cron task CRUD, run history, and scheduler control
+- DiscoveryKit API: nearby device discovery, self info, device register/unregister, SSE peer events
 - ModelKit API: task-oriented model listing and OpenAI-compatible chat /
   embedding / asr / tts clients under `/modelkit/*`
 - ToolKit API: tool listing, tool definition loading, and tool lifecycle event subscription
+- TransferKit API: device-to-device file transfer (send/receive/progress stream/cancel/respond), receive policy, transfer history
 
 ## Getting Started
 
@@ -211,9 +214,12 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 | --- | --- | --- |
 | `agentos` | `AgentOSModule` | Root/AppKit endpoints with internal token handling. |
 | `agentkit` | `AgentKitModule` | AgentKit endpoints with internal token handling. |
+| `authkit` | `AuthKitModule` | AuthKit OAuth authorization endpoints with internal token handling. |
 | `cronkit` | `CronKitModule` | CronKit task management endpoints with internal token handling. |
+| `discoverykit` | `DiscoveryKitModule` | DiscoveryKit nearby device discovery with internal token handling. |
 | `modelkit` | `ModelKitModule` | ModelKit task-oriented model listing and chat / embedding / asr / tts clients. |
 | `toolkit` | `ToolKitModule` | ToolKit discovery endpoints and tool lifecycle event subscription. |
+| `transferkit` | `TransferKitModule` | TransferKit file transfer endpoints with internal token handling. |
 | `dispose()` | `Promise<void>` | Releases SDK resources and cancels active AppKit subscription. |
 
 ### AgentOSModule (`sdk.agentos`)
@@ -316,6 +322,248 @@ const result = await sdk.toolkit.callTool({
 });
 
 console.log(result.result);
+```
+
+### AuthKitModule (`sdk.authkit`)
+
+AuthKit provides OAuth-like authorization for third-party apps. The app initiates
+an authorization request; AgentOS Desktop shows a user confirmation dialog; once
+approved, the app exchanges the authCode for an accessToken to retrieve user info.
+
+**Authorization Status Enum (`AuthRequestStatus`):**
+
+| Value | Description |
+| --- | --- |
+| `pending` | Awaiting user confirmation |
+| `granted` | User approved |
+| `denied` | User denied |
+| `timeout` | Request timed out (3 minutes) |
+
+**Token Validation Result Enum (`TokenValidationResult`):**
+
+| Value | Description |
+| --- | --- |
+| `valid` | Token is valid and AgentOS is logged in |
+| `invalidToken` | Token not recognized |
+| `authExpired` | AgentOS user logged out |
+| `tokenRevoked` | Authorization revoked |
+
+| Method | Parameters | Description |
+| --- | --- | --- |
+| `authorize(request?)` | `{ scopes?: string[]; appName?: string }` | Initiates an authorization request. Already-authorized apps get `granted` + `authCode` immediately; first-time returns `pending` (HTTP 202). |
+| `getStatus(requestId)` | `requestId` | Polls authorization request status. |
+| `exchangeToken(request)` | `{ authCode: string }` | Exchanges authCode for accessToken and userInfo. |
+| `getUserInfo(accessToken)` | `accessToken` | Fetches current user info with an accessToken. |
+| `revoke(request?)` | `{ bundleId?: string }` | Revokes authorization for a given bundleId. |
+| `listGrants()` | none | Lists all active authorization grants. |
+
+```ts
+const authResponse = await sdk.authkit.authorize({
+  scopes: ['profile'],
+  appName: 'My Third-Party App'
+});
+
+if (authResponse.status === 'granted') {
+  const tokenInfo = await sdk.authkit.exchangeToken({
+    authCode: authResponse.authCode!
+  });
+  console.log('Access Token:', tokenInfo.accessToken);
+  console.log('User:', tokenInfo.userInfo.name);
+}
+```
+
+**AuthKitGrant structure:**
+
+```ts
+interface AuthKitGrant {
+  bundleId: string;
+  appName?: string;
+  userId?: string;
+  scopes: string[];
+  grantedAt: string; // ISO 8601
+}
+```
+
+### DiscoveryKitModule (`sdk.discoverykit`)
+
+DiscoveryKit discovers nearby AgentOS devices, supporting device-level and
+app-level scans.
+
+**Peer Device Event Type Enum (`PeerDeviceEventType`):**
+
+| Value | Description |
+| --- | --- |
+| `joined` | New device came online |
+| `left` | Device went offline |
+| `updated` | Device info updated |
+
+**File Receive Policy Enum (`FileReceivePolicy`):**
+
+| Value | Description |
+| --- | --- |
+| `autoAccept` | Automatically accept incoming files |
+| `requireConfirm` | Require user confirmation |
+
+| Method | Parameters | Description |
+| --- | --- | --- |
+| `getPeers()` | none | Lists nearby peer devices. App-level scans only return devices with the same bundleId registered. |
+| `streamPeers(signal?)` | `AbortSignal` | SSE subscription for device change events (`peer.joined` / `peer.left` / `peer.updated`). |
+| `getSelf()` | none | Gets self device info and nearbyTransfer status. |
+| `register(request?)` | `{ receivePolicy?: FileReceivePolicy }` | Registers the current app into discovery broadcast. |
+| `unregister()` | none | Unregisters the current app from discovery broadcast. |
+
+```ts
+await sdk.discoverykit.register({ receivePolicy: 'autoAccept' });
+
+const peers = await sdk.discoverykit.getPeers();
+console.log('Nearby devices:', peers.length);
+
+const self = await sdk.discoverykit.getSelf();
+console.log('Transfer enabled:', self.nearbyTransferEnabled);
+```
+
+**PeerDevice structure:**
+
+```ts
+interface PeerDevice {
+  deviceId: string;
+  name: string;
+  avatarUrl?: string;
+  deviceName: string;
+  deviceType: string;
+  host: string;
+  port: number;
+  online: boolean;
+  apps: PeerApp[];
+}
+```
+
+**PeerApp structure:**
+
+```ts
+interface PeerApp {
+  bundleId?: string;
+  userId?: string;
+  username?: string;
+  appName?: string;
+  avatarUrl?: string;
+}
+```
+
+### TransferKitModule (`sdk.transferkit`)
+
+TransferKit provides file transfer between AgentOS devices, including send,
+receive, progress tracking, cancellation, and transfer history management.
+
+**Transfer State Enum (`TransferState`):**
+
+| Value | Description |
+| --- | --- |
+| `pending` | Waiting to start |
+| `preparing` | Preparing |
+| `transferring` | Transferring |
+| `completed` | Transfer completed |
+| `failed` | Transfer failed |
+| `cancelled` | Cancelled |
+
+**Transfer Direction Enum (`TransferDirection`):**
+
+| Value | Description |
+| --- | --- |
+| `send` | Sending |
+| `receive` | Receiving |
+
+**File Transfer State Enum (`FileTransferState`):**
+
+| Value | Description |
+| --- | --- |
+| `pending` | Waiting |
+| `transferring` | Transferring |
+| `completed` | Completed |
+| `failed` | Failed |
+
+| Method | Parameters | Description |
+| --- | --- | --- |
+| `send(request)` | `TransferSendRequest` | Sends files to a target device, returns `TransferSession`. |
+| `listTransfers()` | none | Lists all transfer sessions for the current app. |
+| `getStatus(transferId)` | `transferId` | Gets a transfer session status. |
+| `streamProgress(transferId, signal?)` | `transferId`, `AbortSignal` | SSE subscription for transfer progress; closes automatically on completion/failure. |
+| `cancel(transferId)` | `transferId` | Cancels an in-progress transfer. |
+| `respond(transferId, request)` | `transferId`, `{ accept: boolean }` | Accepts or declines an incoming transfer request. |
+| `receiveStream(signal?)` | `AbortSignal` | SSE subscription for incoming file transfer events (`file.received`). |
+| `setPolicy(request)` | `{ policy: string }` | Sets file receive policy (`autoAccept` / `requireConfirm`). |
+| `getPolicy()` | none | Gets current file receive policy. |
+| `addHistory(request)` | `AddHistoryRequest` | Adds a transfer history record. |
+| `getHistory(query?)` | `{ deviceId?: string; userId?: string }` | Gets transfer history records (newest first). |
+| `deleteHistory(recordId, query?)` | `recordId`, `HistoryQuery` | Deletes a single transfer history record. |
+| `clearHistory(query?)` | `HistoryQuery` | Clears all transfer history. |
+
+```ts
+const peers = await sdk.discoverykit.getPeers();
+const target = peers[0];
+
+const session = await sdk.transferkit.send({
+  targetDeviceId: target.deviceId,
+  files: [
+    { fileName: 'doc.pdf', size: 1024000, filePath: '/data/doc.pdf' }
+  ]
+});
+console.log('Transfer ID:', session.transferId);
+console.log('State:', session.state);
+
+// Stream progress
+const progress = await sdk.transferkit.streamProgress(session.transferId);
+for await (const update of progress) {
+  console.log(`Progress: ${(update.progress * 100).toFixed(1)}%`);
+  if (update.state === 'completed' || update.state === 'failed') break;
+}
+```
+
+**TransferSession structure:**
+
+```ts
+interface TransferSession {
+  transferId: string;
+  state: TransferState;
+  progress: number;      // 0.0 ~ 1.0
+  targetDeviceId: string;
+  bundleId: string;
+  userId?: string;
+  targetBundleId?: string;
+  files: TransferFileInfo[];
+  errorMessage?: string;
+}
+```
+
+**IncomingTransferEvent structure:**
+
+```ts
+interface IncomingTransferEvent {
+  transferId: string;
+  fromDeviceId: string;
+  fromName: string;
+  sourceBundleId: string;
+  targetBundleId?: string;
+  autoAccepted: boolean;
+  files: ReceivedFileInfo[];
+}
+```
+
+**TransferHistoryRecord structure:**
+
+```ts
+interface TransferHistoryRecord {
+  id: string;
+  direction: TransferDirection; // 'send' | 'receive'
+  peerDeviceId: string;
+  peerName: string;
+  peerAvatarUrl?: string;
+  files: TransferHistoryFile[];
+  totalSize: number;
+  state: TransferState;
+  timestamp: string; // ISO 8601
+  savedDir?: string;
+}
 ```
 
 ### OpenTool Exports
@@ -447,7 +695,7 @@ class MyHandler extends AgentMessageHandler {
 ## Token Handling
 
 - `agentos.registerBundle(...)` stores the bearer token internally.
-- `agentkit`, `agentos`, and `cronkit` requests use the stored token automatically.
+- `agentkit`, `agentos`, `authkit`, `cronkit`, `discoverykit`, `toolkit`, and `transferkit` requests use the stored token automatically.
 - When an app token expires, the SDK retries once after re-registering the bundle for the same `bundleId` and `appGroupId`.
 
 ## Notes

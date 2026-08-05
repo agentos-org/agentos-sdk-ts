@@ -31,16 +31,48 @@ import { AgentMessageHandler } from '../agentkit/agent_message_handler';
 import { AgentOSEventHandler } from './agentos_event_handler';
 import { AgentKitClient } from '../agentkit/agentkit_client';
 import { AppKitClient } from '../appkit/appkit_client';
+import { AuthKitClient } from '../authkit/authkit_client';
 import { CronKitClient } from '../cronkit/cronkit_client';
+import { DiscoveryKitClient } from '../discoverykit/discoverykit_client';
 import { ModelKitClient } from '../modelkit/modelkit_client';
 import { ModelTask } from '../modelkit/dto';
 import { SystemKitClient } from '../systemkit/systemkit_client';
 import { ToolKitClient } from '../toolkit/toolkit_client';
+import { TransferKitClient } from '../transferkit/transferkit_client';
 import type {
   ToolKitCallOptions,
   ToolKitStreamCallOptions,
   ToolKitStreamEvent
 } from '../toolkit/dto';
+import type {
+  AuthorizeRequest,
+  AuthorizeResponse,
+  AuthKitGrant,
+  AuthKitUserInfo,
+  ExchangeTokenRequest,
+  ExchangeTokenResponse,
+  RevokeRequest,
+} from '../authkit/dto';
+import type {
+  DiscoveryRegisterRequest,
+  DiscoveryRegisterResponse,
+  DiscoveryUnregisterResponse,
+  PeerDevice,
+  PeerDeviceEvent,
+  SelfInfo,
+} from '../discoverykit/dto';
+import type { FileReceivePolicy } from '../discoverykit/dto';
+import type {
+  AddHistoryRequest,
+  HistoryQuery,
+  IncomingTransferEvent,
+  PolicyResponse,
+  SetPolicyRequest,
+  TransferHistoryRecord,
+  TransferRespondRequest,
+  TransferSendRequest,
+  TransferSession,
+} from '../transferkit/dto';
 import { ApiClient, ApiError, Subscription, asJsonMap, ensureError } from '../../utils';
 import { getAgentOSBridgeTransportDefaults } from '../../bridge';
 
@@ -77,16 +109,22 @@ export class AgentOSSDK {
   readonly apiClient: ApiClient;
   readonly agentos: AgentOSModule;
   readonly agentkit: AgentKitModule;
+  readonly authkit: AuthKitModule;
   readonly cronkit: CronKitModule;
+  readonly discoverykit: DiscoveryKitModule;
   readonly modelkit: ModelKitModule;
   readonly toolkit: ToolKitModule;
+  readonly transferkit: TransferKitModule;
 
   readonly systemKit: SystemKitClient;
   readonly agentKit: AgentKitClient;
   readonly appKit: AppKitClient;
+  readonly authKit: AuthKitClient;
   readonly cronKit: CronKitClient;
+  readonly discoveryKit: DiscoveryKitClient;
   readonly modelKit: ModelKitClient;
   readonly toolKit: ToolKitClient;
+  readonly transferKit: TransferKitClient;
   readonly appTokens = new Map<string, string>();
   readonly appBundles = new Map<string, AppBundle>();
   readonly tokenContexts = new Map<string, AppAuthCacheKey>();
@@ -124,14 +162,20 @@ export class AgentOSSDK {
     this.systemKit = new SystemKitClient(this.apiClient);
     this.agentKit = new AgentKitClient(this.apiClient);
     this.appKit = new AppKitClient(this.apiClient);
+    this.authKit = new AuthKitClient(this.apiClient);
     this.cronKit = new CronKitClient(this.apiClient);
+    this.discoveryKit = new DiscoveryKitClient(this.apiClient);
     this.modelKit = new ModelKitClient(this.apiClient);
     this.toolKit = new ToolKitClient(this.apiClient);
+    this.transferKit = new TransferKitClient(this.apiClient);
     this.agentos = new AgentOSModule(this);
     this.agentkit = new AgentKitModule(this);
+    this.authkit = new AuthKitModule(this);
     this.cronkit = new CronKitModule(this);
+    this.discoverykit = new DiscoveryKitModule(this);
     this.modelkit = new ModelKitModule(this);
     this.toolkit = new ToolKitModule(this);
+    this.transferkit = new TransferKitModule(this);
   }
 
   get isSubscribed(): boolean {
@@ -819,6 +863,114 @@ export class ToolKitModule {
   /** @deprecated Not exposed by the AgentOS API gateway ToolKit API. */
   subscribeToolEvents(options: { daemonApiKey: string; snapshot?: boolean; signal?: AbortSignal }) {
     return this.client.toolKit.subscribeToolEvents(options.daemonApiKey, options.snapshot ?? true, options.signal);
+  }
+}
+
+export class AuthKitModule {
+  constructor(private readonly client: AgentOSSDK) {}
+
+  authorize(request?: AuthorizeRequest): Promise<AuthorizeResponse> {
+    return this.client.withAppAuthRetry((token) => this.client.authKit.authorize(token, request));
+  }
+
+  getStatus(requestId: string): Promise<AuthorizeResponse> {
+    return this.client.withAppAuthRetry((token) => this.client.authKit.getStatus(token, requestId));
+  }
+
+  exchangeToken(request: ExchangeTokenRequest): Promise<ExchangeTokenResponse> {
+    return this.client.withAppAuthRetry((token) => this.client.authKit.exchangeToken(token, request));
+  }
+
+  getUserInfo(accessToken: string): Promise<AuthKitUserInfo> {
+    return this.client.authKit.getUserInfo(accessToken);
+  }
+
+  revoke(request?: RevokeRequest): Promise<{ status: string }> {
+    return this.client.withAppAuthRetry((token) => this.client.authKit.revoke(token, request));
+  }
+
+  listGrants(): Promise<AuthKitGrant[]> {
+    return this.client.withAppAuthRetry((token) => this.client.authKit.listGrants(token));
+  }
+}
+
+export class DiscoveryKitModule {
+  constructor(private readonly client: AgentOSSDK) {}
+
+  getPeers(): Promise<PeerDevice[]> {
+    return this.client.withAppAuthRetry((token) => this.client.discoveryKit.getPeers(token));
+  }
+
+  streamPeers(signal?: AbortSignal): Promise<AsyncGenerator<PeerDeviceEvent>> {
+    return this.client.withAppAuthRetry((token) => this.client.discoveryKit.streamPeers(token, signal));
+  }
+
+  getSelf(): Promise<SelfInfo> {
+    return this.client.withAppAuthRetry((token) => this.client.discoveryKit.getSelf(token));
+  }
+
+  register(request?: DiscoveryRegisterRequest): Promise<DiscoveryRegisterResponse> {
+    return this.client.withAppAuthRetry((token) => this.client.discoveryKit.register(token, request));
+  }
+
+  unregister(): Promise<DiscoveryUnregisterResponse> {
+    return this.client.withAppAuthRetry((token) => this.client.discoveryKit.unregister(token));
+  }
+}
+
+export class TransferKitModule {
+  constructor(private readonly client: AgentOSSDK) {}
+
+  send(request: TransferSendRequest): Promise<TransferSession> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.send(token, request));
+  }
+
+  listTransfers(): Promise<TransferSession[]> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.listTransfers(token));
+  }
+
+  getStatus(transferId: string): Promise<TransferSession> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.getStatus(token, transferId));
+  }
+
+  streamProgress(transferId: string, signal?: AbortSignal): Promise<AsyncGenerator<TransferSession>> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.streamProgress(token, transferId, signal));
+  }
+
+  cancel(transferId: string): Promise<{ status: string }> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.cancel(token, transferId));
+  }
+
+  respond(transferId: string, request: TransferRespondRequest): Promise<{ status: string }> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.respond(token, transferId, request));
+  }
+
+  receiveStream(signal?: AbortSignal): Promise<AsyncGenerator<IncomingTransferEvent>> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.receiveStream(token, signal));
+  }
+
+  setPolicy(request: SetPolicyRequest): Promise<PolicyResponse> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.setPolicy(token, request));
+  }
+
+  getPolicy(): Promise<PolicyResponse> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.getPolicy(token));
+  }
+
+  addHistory(request: AddHistoryRequest): Promise<{ status: string; id: string }> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.addHistory(token, request));
+  }
+
+  getHistory(query?: HistoryQuery): Promise<TransferHistoryRecord[]> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.getHistory(token, query));
+  }
+
+  deleteHistory(recordId: string, query?: HistoryQuery): Promise<{ status: string }> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.deleteHistory(token, recordId, query));
+  }
+
+  clearHistory(query?: HistoryQuery): Promise<{ status: string }> {
+    return this.client.withAppAuthRetry((token) => this.client.transferKit.clearHistory(token, query));
   }
 }
 
