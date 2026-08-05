@@ -347,8 +347,6 @@ AuthKit 为第三方 App 提供类 OAuth 授权流程。App 发起授权请求�
 | `exchangeToken(request)` | `{ authCode: string }` | 使用 authCode 换取 accessToken 和 userInfo。 |
 | `getUserInfo(accessToken)` | `accessToken` | 使用 accessToken 获取当前用户信息。 |
 | `revoke(request?)` | `{ bundleId?: string }` | 撤销指定 bundleId 的授权。 |
-| `listGrants()` | 无 | 列出所有已授权的 Grant。 |
-
 ```ts
 const authResponse = await sdk.authkit.authorize({
   scopes: ['profile'],

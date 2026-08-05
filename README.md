@@ -355,8 +355,6 @@ approved, the app exchanges the authCode for an accessToken to retrieve user inf
 | `exchangeToken(request)` | `{ authCode: string }` | Exchanges authCode for accessToken and userInfo. |
 | `getUserInfo(accessToken)` | `accessToken` | Fetches current user info with an accessToken. |
 | `revoke(request?)` | `{ bundleId?: string }` | Revokes authorization for a given bundleId. |
-| `listGrants()` | none | Lists all active authorization grants. |
-
 ```ts
 const authResponse = await sdk.authkit.authorize({
   scopes: ['profile'],

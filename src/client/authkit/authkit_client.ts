@@ -1,7 +1,6 @@
 import type {
   AuthorizeRequest,
   AuthorizeResponse,
-  AuthKitGrant,
   AuthKitUserInfo,
   ExchangeTokenRequest,
   ExchangeTokenResponse,
@@ -48,9 +47,4 @@ export class AuthKitClient {
     });
   }
 
-  listGrants(bearerToken: string): Promise<AuthKitGrant[]> {
-    return this.apiClient.request<AuthKitGrant[]>('/authkit/grants', {
-      headers: { authorization: `Bearer ${bearerToken}` },
-    });
-  }
 }

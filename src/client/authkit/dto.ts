@@ -54,15 +54,6 @@ export interface AuthKitUserInfo {
   avatarUrl: string;
 }
 
-/** A granted authorization entry returned by GET /authkit/grants */
-export interface AuthKitGrant {
-  bundleId: string;
-  appName?: string;
-  userId?: string;
-  scopes: string[];
-  grantedAt: string;
-}
-
 /** Payload sent to POST /authkit/revoke */
 export interface RevokeRequest {
   bundleId?: string;

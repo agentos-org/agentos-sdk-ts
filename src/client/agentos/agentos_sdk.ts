@@ -47,7 +47,6 @@ import type {
 import type {
   AuthorizeRequest,
   AuthorizeResponse,
-  AuthKitGrant,
   AuthKitUserInfo,
   ExchangeTokenRequest,
   ExchangeTokenResponse,
@@ -887,10 +886,6 @@ export class AuthKitModule {
 
   revoke(request?: RevokeRequest): Promise<{ status: string }> {
     return this.client.withAppAuthRetry((token) => this.client.authKit.revoke(token, request));
-  }
-
-  listGrants(): Promise<AuthKitGrant[]> {
-    return this.client.withAppAuthRetry((token) => this.client.authKit.listGrants(token));
   }
 }
 
