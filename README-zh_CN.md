@@ -482,7 +482,6 @@ TransferKit 提供 AgentOS 设备之间的文件传输能力，包括发送、�
 | `receiveStream(signal?)` | `AbortSignal` | SSE 订阅入站文件传输事件（`file.received`）。 |
 | `setPolicy(request)` | `{ policy: string }` | 设置文件接收策略（`autoAccept` / `requireConfirm`）。 |
 | `getPolicy()` | 无 | 获取当前文件接收策略。 |
-| `addHistory(request)` | `AddHistoryRequest` | 添加一条传输历史记录。 |
 | `getHistory(query?)` | `{ deviceId?: string; userId?: string }` | 获取传输历史记录列表（最新在前）。 |
 | `deleteHistory(recordId, query?)` | `recordId`、`HistoryQuery` | 删除单条传输历史记录。 |
 | `clearHistory(query?)` | `HistoryQuery` | 清空传输历史。 |

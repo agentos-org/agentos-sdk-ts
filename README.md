@@ -491,7 +491,6 @@ receive, progress tracking, cancellation, and transfer history management.
 | `receiveStream(signal?)` | `AbortSignal` | SSE subscription for incoming file transfer events (`file.received`). |
 | `setPolicy(request)` | `{ policy: string }` | Sets file receive policy (`autoAccept` / `requireConfirm`). |
 | `getPolicy()` | none | Gets current file receive policy. |
-| `addHistory(request)` | `AddHistoryRequest` | Adds a transfer history record. |
 | `getHistory(query?)` | `{ deviceId?: string; userId?: string }` | Gets transfer history records (newest first). |
 | `deleteHistory(recordId, query?)` | `recordId`, `HistoryQuery` | Deletes a single transfer history record. |
 | `clearHistory(query?)` | `HistoryQuery` | Clears all transfer history. |

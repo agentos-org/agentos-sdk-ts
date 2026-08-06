@@ -62,7 +62,6 @@ import type {
 } from '../discoverykit/dto';
 import type { FileReceivePolicy } from '../discoverykit/dto';
 import type {
-  AddHistoryRequest,
   HistoryQuery,
   IncomingTransferEvent,
   PolicyResponse,
@@ -950,10 +949,6 @@ export class TransferKitModule {
 
   getPolicy(): Promise<PolicyResponse> {
     return this.client.withAppAuthRetry((token) => this.client.transferKit.getPolicy(token));
-  }
-
-  addHistory(request: AddHistoryRequest): Promise<{ status: string; id: string }> {
-    return this.client.withAppAuthRetry((token) => this.client.transferKit.addHistory(token, request));
   }
 
   getHistory(query?: HistoryQuery): Promise<TransferHistoryRecord[]> {

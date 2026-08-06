@@ -125,22 +125,6 @@ export interface PolicyResponse {
   bundleId?: string;
 }
 
-/** Payload sent to POST /transferkit/history */
-export interface AddHistoryRequest {
-  id?: string;
-  direction?: TransferDirection;
-  peerDeviceId?: string;
-  peerName?: string;
-  peerAvatarUrl?: string;
-  files?: TransferHistoryFile[];
-  totalSize?: number;
-  state?: TransferState;
-  timestamp?: string;
-  savedDir?: string;
-  deviceId?: string;
-  userId?: string;
-}
-
 /** Query parameters for GET /transferkit/history */
 export interface HistoryQuery {
   deviceId?: string;

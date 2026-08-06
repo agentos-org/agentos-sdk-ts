@@ -1,5 +1,4 @@
 import type {
-  AddHistoryRequest,
   HistoryQuery,
   IncomingTransferEvent,
   PolicyResponse,
@@ -89,14 +88,6 @@ export class TransferKitClient {
   getPolicy(bearerToken: string): Promise<PolicyResponse> {
     return this.apiClient.request<PolicyResponse>('/transferkit/receive/policy', {
       headers: { authorization: `Bearer ${bearerToken}` },
-    });
-  }
-
-  addHistory(bearerToken: string, request: AddHistoryRequest): Promise<{ status: string; id: string }> {
-    return this.apiClient.request<{ status: string; id: string }>('/transferkit/history', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${bearerToken}` },
-      data: request,
     });
   }
 
