@@ -162,7 +162,7 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
         state.lastToolkitHeaders = request.headers;
         return sseResponse([
           'event: ready\ndata: {}\n\n',
-          'event: updated\ndata: {"type":"updated","tool":{"id":"tool-1"}}\n\n'
+          'event: updated\ndata: {"type":"updated","reason":"contentChanged","tool":{"id":"tool-1"},"occurredAt":"2026-08-13T06:00:00.000Z"}\n\n'
         ]);
       }
       throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);

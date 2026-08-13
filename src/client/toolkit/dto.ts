@@ -56,7 +56,8 @@ export interface ToolDto {
 
 export interface ToolLifecycleEventDto {
   type: string;
-  reason?: string;
+  reason: string;
   tool: ToolDto;
+  occurredAt: string;
   [key: string]: unknown;
 }

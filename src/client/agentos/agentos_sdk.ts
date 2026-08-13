@@ -60,7 +60,6 @@ import type {
   PeerDeviceEvent,
   SelfInfo,
 } from '../discoverykit/dto';
-import type { FileReceivePolicy } from '../discoverykit/dto';
 import type {
   HistoryQuery,
   IncomingTransferEvent,
