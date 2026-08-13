@@ -31,8 +31,8 @@ Use a single public import:
 import { AgentOSSDK } from 'agentos-sdk-ts';
 ```
 
-The package root is browser-safe. Node-only OpenTool and daemon exports now live
-under explicit subpaths.
+The package root is browser-safe. Node-only OpenTool exports live under
+explicit subpaths.
 
 ```ts
 import {
@@ -41,8 +41,6 @@ import {
 } from 'agentos-sdk-ts';
 
 import {
-  DAEMON_DEFAULT_PREFIX,
-  DaemonClient,
   FunctionCall,
   OpenTool,
   OpenToolJsonLoader,
@@ -577,10 +575,9 @@ explicit Node-only subpaths:
 - `agentos-sdk-ts/opentool`
 - `agentos-sdk-ts/third_party`
 
-The `DaemonClient` exposed by these subpaths is the register-only client from
-the published `opentool-ts@2.0.2`. Direct daemon 0.5 management APIs are not
-currently available from the upstream TypeScript package; use the AgentOS
-ToolKit gateway APIs for tool listing, loading, and calls.
+These subpaths expose OpenTool protocol models and helpers only. Daemon
+management is outside the OpenTool language SDK; use the AgentOS ToolKit
+gateway APIs for tool listing, loading, and calls.
 
 ### AgentOSEventHandler
 

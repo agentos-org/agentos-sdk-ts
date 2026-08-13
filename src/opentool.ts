@@ -18,15 +18,6 @@ export {
   JsonParserException,
   ToolBreakException
 } from 'opentool-ts/opentool-tool';
-export {
-  DAEMON_DEFAULT_PORT,
-  DAEMON_DEFAULT_PREFIX,
-  DaemonClient
-} from 'opentool-ts/opentool-daemon';
-export type {
-  RegisterInfo as DaemonRegisterInfo,
-  RegisterResult as DaemonRegisterResult
-} from 'opentool-ts/opentool-daemon';
 
 export interface Tool {
   call(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>>;

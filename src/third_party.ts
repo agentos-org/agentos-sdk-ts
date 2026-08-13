@@ -1,7 +1,4 @@
 export {
-  DAEMON_DEFAULT_PORT,
-  DAEMON_DEFAULT_PREFIX,
-  DaemonClient,
   DataType,
   EventType,
   FunctionModel,
@@ -19,8 +16,6 @@ export {
   ToolBreakException
 } from './opentool';
 export type {
-  DaemonRegisterInfo,
-  DaemonRegisterResult,
   FunctionCall as OpenToolFunctionCall,
   Tool as OpenToolTool,
   ToolReturn as OpenToolToolReturn

@@ -22,14 +22,21 @@ import {
   parseSse,
   ToolKitClient
 } from '../dist/index.js';
-import {
-  DAEMON_DEFAULT_PREFIX,
-  SchemaType
-} from '../dist/opentool.js';
+import * as openToolExports from '../dist/opentool.js';
+import * as thirdPartyExports from '../dist/third_party.js';
 
 test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk', async () => {
-  assert.equal(typeof DAEMON_DEFAULT_PREFIX, 'string');
-  assert.equal(typeof SchemaType, 'function');
+  assert.equal(typeof openToolExports.SchemaType, 'function');
+  for (const legacyDaemonExport of [
+    'DaemonClient',
+    'DAEMON_DEFAULT_PORT',
+    'DAEMON_DEFAULT_PREFIX',
+    'DaemonRegisterInfo',
+    'DaemonRegisterResult'
+  ]) {
+    assert.equal(legacyDaemonExport in openToolExports, false);
+    assert.equal(legacyDaemonExport in thirdPartyExports, false);
+  }
   const state = {
     registerCount: 0,
     lastRegisterBody: null,
@@ -2069,6 +2076,19 @@ test('generated declarations expose capability execution limits', () => {
     'maxTaskDurationSeconds'
   ]) {
     assert.match(declaration, new RegExp(`${field}\\?: number;`));
+  }
+});
+
+test('OpenTool subpaths do not expose the legacy daemon client', () => {
+  for (const entrypoint of ['opentool', 'third_party']) {
+    const declaration = readFileSync(
+      new URL(`../dist/${entrypoint}.d.ts`, import.meta.url),
+      'utf8'
+    );
+    assert.doesNotMatch(
+      declaration,
+      /DaemonClient|DAEMON_DEFAULT_PORT|DAEMON_DEFAULT_PREFIX|DaemonRegisterInfo|DaemonRegisterResult|opentool-daemon/
+    );
   }
 });
 

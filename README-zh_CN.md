@@ -31,7 +31,7 @@ npm install agentos-sdk-ts
 import { AgentOSSDK } from 'agentos-sdk-ts';
 ```
 
-包根入口现在是 browser-safe 的；Node 专用的 OpenTool / daemon 导出改为显式子入口。
+包根入口现在是 browser-safe 的；Node 专用的 OpenTool 导出位于显式子入口。
 
 ```ts
 import {
@@ -40,8 +40,6 @@ import {
 } from 'agentos-sdk-ts';
 
 import {
-  DAEMON_DEFAULT_PREFIX,
-  DaemonClient,
   FunctionCall,
   OpenTool,
   OpenToolJsonLoader,
@@ -566,9 +564,8 @@ interface TransferHistoryRecord {
 - `agentos-sdk-ts/opentool`
 - `agentos-sdk-ts/third_party`
 
-这些子入口中的 `DaemonClient` 是已发布 `opentool-ts@2.0.2` 提供的仅注册
-客户端。上游 TypeScript 包目前尚未提供 daemon 0.5 的直接管理 API；工具
-列表、定义加载和调用请使用 AgentOS ToolKit 网关 API。
+这些子入口只导出 OpenTool 协议模型和辅助能力。daemon 管理不属于
+OpenTool 语言 SDK；工具列表、定义加载和调用请使用 AgentOS ToolKit 网关 API。
 
 ### AgentOSEventHandler
 

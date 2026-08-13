@@ -6,8 +6,7 @@ const globals = {
   'opentool-ts': 'OpenToolTS',
   'opentool-ts/opentool-schema': 'OpenToolTS',
   'opentool-ts/opentool-tool': 'OpenToolTS',
-  'opentool-ts/opentool-llm': 'OpenToolTS',
-  'opentool-ts/opentool-daemon': 'OpenToolTS'
+  'opentool-ts/opentool-llm': 'OpenToolTS'
 };
 
 function createConfig(input, name, includeUmd = false) {
