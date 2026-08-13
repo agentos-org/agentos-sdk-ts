@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       opentool-ts:
-        specifier: ^2.0.2
+        specifier: 2.0.2
         version: 2.0.2
     devDependencies:
       '@rollup/plugin-commonjs':

@@ -2,6 +2,7 @@ import type {
   AgentOSSDK,
   FunctionCall,
   ToolKitCallOptions,
+  ToolDto,
   ToolKitStreamCallOptions,
   ToolKitStreamEvent,
   ToolReturn
@@ -33,3 +34,16 @@ const streamOptions: ToolKitStreamCallOptions = {
 };
 const stream: AsyncGenerator<ToolKitStreamEvent> = sdk.toolkit.streamCallTool(streamOptions);
 void stream;
+
+const daemonV5Tool: ToolDto = {
+  id: 'tool-websearch',
+  serverId: 'server-websearch',
+  server: {
+    namespace: 'opentool-server',
+    name: 'opentool-server-websearch',
+    version: '1.0.0'
+  },
+  materializedArtifactDigest: 'sha256:websearch',
+  contentState: 'current'
+};
+void daemonV5Tool;

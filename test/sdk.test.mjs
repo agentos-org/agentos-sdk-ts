@@ -66,9 +66,9 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
             {
               ref: 'websearch',
               server: {
-                repo: 'native',
+                namespace: 'native',
                 name: 'opentool-server-websearch',
-                tag: '1.2.0'
+                version: '1.2.0'
               },
               status: 'starting'
             },
@@ -80,9 +80,9 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
             {
               ref: 'stock',
               server: {
-                repo: 'native',
+                namespace: 'native',
                 name: 'opentool-server-stock',
-                tag: '1.0.0'
+                version: '1.0.0'
               },
               status: 'starting'
             }
@@ -93,8 +93,8 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
         assert.equal(request.headers.authorization, 'Bearer token-1');
         return sseResponse([
           'event: welcome\ndata: {"bundleId":"com.demo.app"}\n\n',
-          'id: evt-1\nevent: appEvent\ndata: {"version":1,"id":"evt-1","type":"toolkit.provision.succeeded","source":"toolkit","time":"2026-07-15T10:30:00.000Z","subject":"websearch","data":{"ref":"websearch","name":"opentool-server-websearch","status":"running","server":{"repo":"native","name":"opentool-server-websearch","tag":"1.2.0"},"id":"tool-websearch"}}\n\n',
-          'id: evt-2\nevent: appEvent\ndata: {"version":1,"id":"evt-2","type":"toolkit.provision.failed","source":"toolkit","time":"2026-07-15T10:30:01.000Z","subject":"stock","data":{"ref":"stock","name":"opentool-server-stock","status":"failed","server":{"repo":"native","name":"opentool-server-stock","tag":"1.0.0"},"error":{"code":"startFailed","message":"process exited"}}}\n\n'
+          'id: evt-1\nevent: appEvent\ndata: {"version":1,"id":"evt-1","type":"toolkit.provision.succeeded","source":"toolkit","time":"2026-07-15T10:30:00.000Z","subject":"websearch","data":{"ref":"websearch","name":"opentool-server-websearch","status":"running","server":{"namespace":"native","name":"opentool-server-websearch","version":"1.2.0"},"id":"tool-websearch"}}\n\n',
+          'id: evt-2\nevent: appEvent\ndata: {"version":1,"id":"evt-2","type":"toolkit.provision.failed","source":"toolkit","time":"2026-07-15T10:30:01.000Z","subject":"stock","data":{"ref":"stock","name":"opentool-server-stock","status":"failed","server":{"namespace":"native","name":"opentool-server-stock","version":"1.0.0"},"error":{"code":"startFailed","message":"process exited"}}}\n\n'
         ]);
       }
       if (request.pathname === '/base/cronkit/task/create') {
@@ -147,10 +147,12 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
           status: 'running',
           serverId: 'srv-1',
           server: {
-            repo: 'demo-repo',
+            namespace: 'demo-namespace',
             name: 'demo',
-            tag: '1.0.0'
-          }
+            version: '1.0.0'
+          },
+          materializedArtifactDigest: 'sha256:demo',
+          contentState: 'current'
         }]);
       }
       if (request.pathname === '/base/toolkit/tool-1/load') {
@@ -187,6 +189,8 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
     { ref: 'stock', name: 'opentool-server-stock' }
   ]);
   assert.equal(registration.opentoolServers[0].status, 'starting');
+  assert.equal(registration.opentoolServers[0].server.namespace, 'native');
+  assert.equal(registration.opentoolServers[0].server.version, '1.2.0');
   assert.equal(registration.opentoolServers[0].id, undefined);
   assert.equal(registration.opentoolServers[1].status, 'notFound');
 
@@ -256,9 +260,11 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
 
   const tools = await sdk.toolkit.listTool();
   assert.equal(tools[0].id, 'tool-1');
-  assert.equal(tools[0].server?.repo, 'demo-repo');
+  assert.equal(tools[0].server?.namespace, 'demo-namespace');
   assert.equal(tools[0].server?.name, 'demo');
-  assert.equal(tools[0].server?.tag, '1.0.0');
+  assert.equal(tools[0].server?.version, '1.0.0');
+  assert.equal(tools[0].materializedArtifactDigest, 'sha256:demo');
+  assert.equal(tools[0].contentState, 'current');
   const openTool = await sdk.toolkit.loadTool('tool-1');
   assert.equal(openTool.info.title, 'demo');
   assert.equal(typeof openTool.toJson, 'function');

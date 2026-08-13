@@ -28,11 +28,18 @@ export interface ToolKitStreamCallOptions extends ToolKitCallOptions {
 }
 
 export interface ToolServerDto {
-  repo: string;
+  namespace: string;
   name: string;
-  tag: string;
+  version: string;
   [key: string]: unknown;
 }
+
+export type ToolContentState =
+  | 'unknown'
+  | 'current'
+  | 'updatePending'
+  | 'broken'
+  | (string & {});
 
 export interface ToolDto {
   id: string;
@@ -42,6 +49,8 @@ export interface ToolDto {
   status?: string;
   serverId?: string;
   server?: ToolServerDto;
+  materializedArtifactDigest?: string;
+  contentState?: ToolContentState;
   [key: string]: unknown;
 }
 

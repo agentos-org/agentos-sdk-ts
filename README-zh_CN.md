@@ -298,11 +298,16 @@ function-call 及 callback handler；缺失或为空时回退到外层 root chat
 
 | 方法 | 参数 | 说明 |
 | --- | --- | --- |
-| `listTool(all?)` | `all` | 从 `/toolkit/list` 获取当前可用 tools 列表；当网关返回时，结果会包含 `server.repo`、`server.name`、`server.tag` 等 server 元数据。 |
+| `listTool(all?)` | `all` | 从 `/toolkit/list` 获取当前可用 tools 列表，包括 daemon 0.5 server 标识与物化元数据。 |
 | `loadTool(toolId)` | `toolId` | 从 `/toolkit/{toolId}/load` 读取 `OpenTool` 定义，并返回 `OpenTool` 实例。 |
 | `callTool({ toolId, functionCall })` | `toolId`、`functionCall` | 通过 AgentOS 网关调用工具函数并返回 `ToolReturn`。自动使用 AppKit token，401/403 时刷新并重试。 |
 | `streamCallTool({ toolId, functionCall, signal? })` | `toolId`、`functionCall`、`signal` | 通过 AgentOS 网关流式调用工具函数，返回 `AsyncGenerator<ToolKitStreamEvent>` 并支持取消。 |
 | `subscribeToolEvents({ daemonApiKey, snapshot, signal })` | `daemonApiKey`、`snapshot`、`signal` | 已弃用的 daemon 生命周期接口；AgentOS API 网关不公开该端点。 |
+
+`listTool()` 返回兼容 daemon 0.5 的 `ToolDto`。可选 `server` 标识使用
+`namespace`、`name` 和 `version`；`materializedArtifactDigest` 在可用时标识
+已安装内容，`contentState` 表示内容状态：`unknown`、`current`、
+`updatePending` 或 `broken`。
 
 ```ts
 const result = await sdk.toolkit.callTool({
@@ -560,6 +565,10 @@ interface TransferHistoryRecord {
 
 - `agentos-sdk-ts/opentool`
 - `agentos-sdk-ts/third_party`
+
+这些子入口中的 `DaemonClient` 是已发布 `opentool-ts@2.0.2` 提供的仅注册
+客户端。上游 TypeScript 包目前尚未提供 daemon 0.5 的直接管理 API；工具
+列表、定义加载和调用请使用 AgentOS ToolKit 网关 API。
 
 ### AgentOSEventHandler
 

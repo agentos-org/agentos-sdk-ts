@@ -1,6 +1,6 @@
 {
   "name": "agentos-sdk-ts",
-  "version": "1.3.2",
+  "version": "2.0.0",
   "description": "TypeScript SDK for AgentOS APIs and clients.",
   "license": "MIT",
   "repository": {
@@ -60,6 +60,6 @@
     "typescript-eslint": "^8.66.0"
   },
   "dependencies": {
-    "opentool-ts": "^2.0.2"
+    "opentool-ts": "2.0.2"
   }
 }

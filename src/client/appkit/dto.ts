@@ -12,9 +12,9 @@ export interface OpenToolServerDeclaration {
 }
 
 export interface OpenToolResolvedServer {
-  repo: string;
+  namespace: string;
   name: string;
-  tag: string;
+  version: string;
 }
 
 interface OpenToolRegistrationBase {

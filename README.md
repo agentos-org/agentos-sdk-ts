@@ -305,11 +305,17 @@ chat session ID is used as a fallback.
 
 | Method | Parameters | Description |
 | --- | --- | --- |
-| `listTool(all?)` | `all` | Lists available tools from `/toolkit/list`, including tool server metadata such as `server.repo`, `server.name`, and `server.tag` when provided by the gateway. |
+| `listTool(all?)` | `all` | Lists available tools from `/toolkit/list`, including daemon 0.5 server identity and materialization metadata. |
 | `loadTool(toolId)` | `toolId` | Loads an `OpenTool` definition from `/toolkit/{toolId}/load` and returns an `OpenTool` instance. |
 | `callTool({ toolId, functionCall })` | `toolId`, `functionCall` | Calls a tool through the AgentOS gateway and returns `ToolReturn`. AppKit token refresh and retry are automatic. |
 | `streamCallTool({ toolId, functionCall, signal? })` | `toolId`, `functionCall`, `signal` | Streams typed `ToolKitStreamEvent` values through the AgentOS gateway and supports cancellation. |
 | `subscribeToolEvents({ daemonApiKey, snapshot, signal })` | `daemonApiKey`, `snapshot`, `signal` | Deprecated daemon lifecycle API; this endpoint is not exposed by the AgentOS API gateway. |
+
+`listTool()` returns daemon 0.5-compatible `ToolDto` values. The optional
+`server` identity uses `namespace`, `name`, and `version`.
+`materializedArtifactDigest` identifies installed content when available, and
+`contentState` reports whether it is `unknown`, `current`, `updatePending`, or
+`broken`.
 
 ```ts
 const result = await sdk.toolkit.callTool({
@@ -570,6 +576,11 @@ explicit Node-only subpaths:
 
 - `agentos-sdk-ts/opentool`
 - `agentos-sdk-ts/third_party`
+
+The `DaemonClient` exposed by these subpaths is the register-only client from
+the published `opentool-ts@2.0.2`. Direct daemon 0.5 management APIs are not
+currently available from the upstream TypeScript package; use the AgentOS
+ToolKit gateway APIs for tool listing, loading, and calls.
 
 ### AgentOSEventHandler
 
