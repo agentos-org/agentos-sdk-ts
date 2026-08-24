@@ -49,6 +49,7 @@ export class AgentRoleType {
   static readonly system = 'developer';
   static readonly user = 'user';
   static readonly agent = 'agent';
+  static readonly subAgent = 'subAgent';
   static readonly llm = 'assistant';
   static readonly tool = 'tool';
   static readonly client = 'client';
@@ -61,7 +62,6 @@ export class AgentMessageType {
   static readonly toolCalls = 'toolCalls';
   static readonly toolReturn = 'toolReturn';
   static readonly contentList = 'contentList';
-  static readonly reflection = 'reflection';
   static readonly taskStatus = 'taskStatus';
   static readonly functionCall = 'functionCall';
   static readonly reasoning = 'reasoning';

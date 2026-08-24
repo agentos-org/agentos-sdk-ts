@@ -1,5 +1,4 @@
 import type { Version } from '../systemkit/dto';
-import type { Agent } from './agents_dto';
 import {
   normalizeCapability,
   normalizeSimpleCapability,
@@ -30,43 +29,11 @@ export class AgentKitClient {
     });
   }
 
-  getAgent(bearerToken: string, agentId: string): Promise<Record<string, unknown>> {
-    return this.apiClient.request<Record<string, unknown>>('/agentkit/agent', {
-      query: { agentId },
-      headers: authHeaders(bearerToken)
-    });
-  }
-
-  createAgent(bearerToken: string, agent: Agent): Promise<Record<string, unknown>> {
-    return this.apiClient.request<Record<string, unknown>>('/agentkit/agent/create', {
-      method: 'POST',
-      headers: authHeaders(bearerToken),
-      data: agent
-    });
-  }
-
-  updateAgent(bearerToken: string, agentId: string, agent: Agent): Promise<Record<string, unknown>> {
-    return this.apiClient.request<Record<string, unknown>>('/agentkit/agent/update', {
-      method: 'POST',
-      query: { agentId },
-      headers: authHeaders(bearerToken),
-      data: agent
-    });
-  }
-
-  deleteAgent(bearerToken: string, agentId: string): Promise<Record<string, unknown>> {
-    return this.apiClient.request<Record<string, unknown>>('/agentkit/agent/delete', {
-      query: { agentId },
-      headers: authHeaders(bearerToken)
-    });
-  }
-
-  initSession(bearerToken: string, options: { capability?: unknown; agentId?: string } = {}): Promise<Record<string, unknown>> {
+  initSession(bearerToken: string, capability?: Parameters<typeof normalizeCapability>[0]): Promise<Record<string, unknown>> {
     return this.apiClient.request<Record<string, unknown>>('/agentkit/initSession', {
       method: 'POST',
-      query: options.agentId ? { agentId: options.agentId } : undefined,
       headers: authHeaders(bearerToken),
-      data: options.capability ? normalizeCapability(options.capability as Parameters<typeof normalizeCapability>[0]) : undefined
+      data: capability ? normalizeCapability(capability) : undefined
     });
   }
 

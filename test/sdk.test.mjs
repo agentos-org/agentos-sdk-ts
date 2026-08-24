@@ -764,10 +764,10 @@ test('parseSse removes only the optional leading field space', async () => {
   assert.deepEqual(eofEvents, [{ event: 'final', data: '中文' }]);
 });
 
-test('agentkit retries once after a 401 by re-registering the bundle', async () => {
+test('agentkit initSession retries once after a 401 by re-registering the bundle', async () => {
   const state = {
     registerCount: 0,
-    getAgentCalls: 0
+    initSessionCalls: 0
   };
   const sdk = new AgentOSSDK({
     fetch: createMockFetch((request) => {
@@ -775,24 +775,24 @@ test('agentkit retries once after a 401 by re-registering the bundle', async () 
         state.registerCount += 1;
         return jsonResponse({ token: `token-${state.registerCount}` });
       }
-      if (request.pathname === '/agentkit/agent') {
-        state.getAgentCalls += 1;
+      if (request.pathname === '/agentkit/initSession') {
+        state.initSessionCalls += 1;
         if (request.headers.authorization === 'Bearer token-1') {
           return jsonResponse({ error: 'invalid app token' }, 401);
         }
         assert.equal(request.headers.authorization, 'Bearer token-2');
-        return jsonResponse({ agentId: 'agent-1', name: 'demo' });
+        return jsonResponse({ sessionId: 'session-1' });
       }
       throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
     })
   });
 
   await sdk.agentos.registerBundle({ bundleId: 'com.demo.app', appGroupId: 'grp' });
-  const agent = await sdk.agentkit.getAgent({ agentId: 'agent-1' });
+  const session = await sdk.agentkit.initSession();
 
-  assert.equal(agent.agentId, 'agent-1');
+  assert.equal(session.sessionId, 'session-1');
   assert.equal(state.registerCount, 2);
-  assert.equal(state.getAgentCalls, 2);
+  assert.equal(state.initSessionCalls, 2);
 });
 
 test('agentkit forwards history pagination and returns root task metadata', async () => {
@@ -1166,7 +1166,7 @@ test('shares refreshed token across cronkit, agentkit, and subscribe', async () 
   await sdk.dispose();
 });
 
-test('agentkit normalizes llmConfig defaults and legacy alias fields in outgoing payloads', async () => {
+test('agentkit normalizes capabilities, skills, recursive sub-agents, and llmConfig fields', async () => {
   const captured = {
     initSimpleBody: null,
     initSessionBody: null,
@@ -1199,6 +1199,7 @@ test('agentkit normalizes llmConfig defaults and legacy alias fields in outgoing
   await sdk.agentkit.initSimple({
     simpleCapability: {
       systemPrompt: 'hello',
+      skills: ['---\nname: helper\ndescription: Helps\n---\nFollow instructions.'],
       llmConfig: {
         temperature: 0.5,
         supportsToolCalling: false,
@@ -1211,8 +1212,25 @@ test('agentkit normalizes llmConfig defaults and legacy alias fields in outgoing
     capability: {
       systemPrompt: 'hello',
       llmConfig: {
-        modelId: 'qwen3-8b'
-      }
+        modelId: 'qwen3-8b',
+        provider: 'openai',
+        adapter: 'qwen'
+      },
+      subAgentList: [{
+        name: 'researcher',
+        capability: {
+          systemPrompt: 'Research carefully.',
+          skills: ['---\nname: research\ndescription: Researches\n---\nVerify sources.'],
+          llmConfig: { supportsToolCalling: false },
+          subAgentList: [{
+            name: 'reader',
+            capability: {
+              systemPrompt: 'Read carefully.',
+              llmConfig: { supportsDeepThinking: true }
+            }
+          }]
+        }
+      }]
     }
   });
 
@@ -1221,7 +1239,9 @@ test('agentkit normalizes llmConfig defaults and legacy alias fields in outgoing
     userTask: {
       content: [{ type: 'text', message: 'hello' }],
       llmConfig: {
-        temperature: 0.1
+        temperature: 0.1,
+        headers: { 'x-model-header': 'value' },
+        providerOptions: { reasoningEffort: 'low' }
       }
     }
   });
@@ -1231,19 +1251,32 @@ test('agentkit normalizes llmConfig defaults and legacy alias fields in outgoing
   assert.equal(captured.initSimpleBody.llmConfig.topP, 1);
   assert.equal(captured.initSimpleBody.llmConfig.supportsToolCall, false);
   assert.equal(captured.initSimpleBody.llmConfig.supportsReasoning, false);
+  assert.equal(captured.initSimpleBody.skills.length, 1);
   assert.equal('supportsToolCalling' in captured.initSimpleBody.llmConfig, false);
   assert.equal('supportsDeepThinking' in captured.initSimpleBody.llmConfig, false);
 
   assert.equal(captured.initSessionBody.timeoutSeconds, 3600);
   assert.equal(captured.initSessionBody.taskPipelineStrategy, 'parallel');
   assert.equal(captured.initSessionBody.llmConfig.maxTokens, 4096);
+  assert.equal(captured.initSessionBody.llmConfig.provider, 'openai');
+  assert.equal(captured.initSessionBody.llmConfig.adapter, 'qwen');
   assert.equal(captured.initSessionBody.llmConfig.supportsToolCall, true);
-  assert.equal(captured.initSessionBody.llmConfig.supportsReasoning, true);
+  assert.equal(captured.initSessionBody.llmConfig.supportsReasoning, false);
+  const childCapability = captured.initSessionBody.subAgentList[0].capability;
+  assert.equal(childCapability.timeoutSeconds, 3600);
+  assert.equal(childCapability.llmConfig.supportsToolCall, false);
+  assert.equal(childCapability.llmConfig.supportsReasoning, false);
+  assert.equal(childCapability.skills.length, 1);
+  const grandchildCapability = childCapability.subAgentList[0].capability;
+  assert.equal(grandchildCapability.timeoutSeconds, 3600);
+  assert.equal(grandchildCapability.llmConfig.supportsReasoning, true);
 
   assert.equal(captured.chatBody.llmConfig.temperature, 0.1);
   assert.equal(captured.chatBody.llmConfig.maxTokens, 4096);
   assert.equal(captured.chatBody.llmConfig.supportsToolCall, true);
-  assert.equal(captured.chatBody.llmConfig.supportsReasoning, true);
+  assert.equal(captured.chatBody.llmConfig.supportsReasoning, false);
+  assert.deepEqual(captured.chatBody.llmConfig.headers, { 'x-model-header': 'value' });
+  assert.deepEqual(captured.chatBody.llmConfig.providerOptions, { reasoningEffort: 'low' });
 });
 
 test('agentkit passes capability execution limits through without client defaults or validation', async () => {
@@ -1262,9 +1295,7 @@ test('agentkit passes capability execution limits through without client default
     maxTaskDurationSeconds: 0
   };
   const captured = {
-    initSessionBodies: [],
-    createAgentBody: null,
-    updateAgentBody: null
+    initSessionBodies: []
   };
   const sdk = new AgentOSSDK({
     fetch: createMockFetch((request) => {
@@ -1276,14 +1307,6 @@ test('agentkit passes capability execution limits through without client default
         captured.initSessionBodies.push(request.body);
         return jsonResponse({ sessionId: `session-${captured.initSessionBodies.length}` });
       }
-      if (request.pathname === '/agentkit/agent/create') {
-        captured.createAgentBody = request.body;
-        return jsonResponse({ agentId: 'agent-1' });
-      }
-      if (request.pathname === '/agentkit/agent/update') {
-        captured.updateAgentBody = request.body;
-        return jsonResponse({ agentId: 'agent-1' });
-      }
       throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
     })
   });
@@ -1293,25 +1316,6 @@ test('agentkit passes capability execution limits through without client default
     capability: {
       systemPrompt: 'init limits',
       ...executionLimits
-    }
-  });
-  await sdk.agentkit.createAgent({
-    agent: {
-      name: 'limited agent',
-      capability: {
-        systemPrompt: 'create limits',
-        ...executionLimits
-      }
-    }
-  });
-  await sdk.agentkit.updateAgent({
-    agentId: 'agent-1',
-    agent: {
-      name: 'updated limited agent',
-      capability: {
-        systemPrompt: 'update limits',
-        ...executionLimits
-      }
     }
   });
   await sdk.agentkit.initSession({
@@ -1328,14 +1332,6 @@ test('agentkit passes capability execution limits through without client default
 
   assert.deepEqual(
     Object.fromEntries(Object.keys(executionLimits).map((key) => [key, captured.initSessionBodies[0][key]])),
-    executionLimits
-  );
-  assert.deepEqual(
-    Object.fromEntries(Object.keys(executionLimits).map((key) => [key, captured.createAgentBody.capability[key]])),
-    executionLimits
-  );
-  assert.deepEqual(
-    Object.fromEntries(Object.keys(executionLimits).map((key) => [key, captured.updateAgentBody.capability[key]])),
     executionLimits
   );
   for (const key of Object.keys(executionLimits)) {
@@ -2063,20 +2059,35 @@ test('dart-like structured source layout exists in the TypeScript project', () =
   }
 });
 
-test('generated declarations expose capability execution limits', () => {
+test('generated declarations expose the LiteAgent 0.4 capability contract', () => {
   const declaration = readFileSync(
     new URL('../dist/client/agentkit/capability_dto.d.ts', import.meta.url),
     'utf8'
   );
   for (const field of [
+    'skills',
+    'subAgentList',
     'maxLlmRequests',
     'maxToolRounds',
     'maxToolCalls',
     'maxConsecutiveIdenticalToolRounds',
     'maxTaskDurationSeconds'
   ]) {
-    assert.match(declaration, new RegExp(`${field}\\?: number;`));
+    const type = field === 'skills'
+      ? 'string\\[\\]'
+      : field === 'subAgentList'
+        ? 'Agent\\[\\]'
+        : 'number';
+    assert.match(declaration, new RegExp(`${field}\\?: ${type};`));
   }
+  assert.doesNotMatch(declaration, /sessionList|reflectPromptList|ReflectPrompt/);
+
+  const moduleDeclaration = readFileSync(
+    new URL('../dist/client/agentos/agentos_sdk.d.ts', import.meta.url),
+    'utf8'
+  );
+  assert.doesNotMatch(moduleDeclaration, /\n\s+(?:getAgent|createAgent|updateAgent|deleteAgent)\(/);
+  assert.doesNotMatch(moduleDeclaration, /initSession\([^)]*agentId/);
 });
 
 test('OpenTool subpaths do not expose the legacy daemon client', () => {

@@ -7,7 +7,7 @@ CronKit、ModelKit 和 ToolKit 发现接口。推荐使用统一的 `AgentOSSDK`
 ## 功能
 
 - Root API：版本查询
-- AgentKit API：Agent CRUD、会话初始化、chat 流式/单次、历史记录、stop/clear、回调
+- AgentKit API：会话初始化、chat 流式/单次、历史记录、stop/clear、回调
 - AppKit API：bundle 注册与 SSE 订阅
 - AuthKit API：OAuth 授权流、token 交换、用户信息获取、授权管理
 - CronKit API：定时任务 CRUD、运行记录与调度器控制
@@ -262,11 +262,7 @@ new AgentOSSDK({
 
 | 方法 | 参数 | 说明 |
 | --- | --- | --- |
-| `getAgent({ agentId })` | `agentId` | 通过 `agentId` 获取 agent。 |
-| `createAgent({ agent })` | `agent` | 使用给定负载创建 agent。 |
-| `updateAgent({ agentId, agent })` | `agentId`、`agent` | 按 `agentId` 更新 agent。 |
-| `deleteAgent({ agentId })` | `agentId` | 按 `agentId` 删除 agent。 |
-| `initSession({ agentId, capability }?)` | `agentId`、`capability` | 初始化 SessionAgent 会话。 |
+| `initSession({ capability }?)` | `capability` | 初始化 SessionAgent 会话；嵌套 Agent 通过 `capability.subAgentList` 内联声明。 |
 | `initSimple({ simpleCapability })` | `simpleCapability` | 初始化 SimpleAgent 会话。 |
 | `chat(session, userTask, handler)` | `session`、`userTask`、`handler` | 启动 SessionAgent 任务，并通过回调处理 SSE 事件。 |
 | `chatSimple({ sessionId, userTask })` | `sessionId`、`userTask` | 执行 SimpleAgent 请求并返回一次性响应。 |
@@ -608,11 +604,14 @@ register 返回状态为 `running`、`starting` 或 `notFound`，只有 `running
   - `extraSystemPrompt`
   - `llmConfig`
 - `LLMConfig` 支持：
+  - `provider`、`adapter`、`headers` 和 `providerOptions`
   - `contextWindowSize`
   - `supportsToolCall`（可读/可写）
   - `supportsReasoning`（可读/可写）
   - 读取兼容 `supportsToolCalling` 和 `supportsDeepThinking`
 - `Capability` 支持：
+  - `skills`：完整的 Agent Skills Markdown 文档
+  - `subAgentList`：可递归嵌套的内联 Agent；运行时 session ID 由服务端生成
   - `llmConfigList`
   - `toolReturnPackMinLength`
   - `maxLlmRequests`：单个工具型任务的大模型请求次数上限（服务端默认值：`64`）
@@ -629,6 +628,10 @@ import type { Capability } from 'agentos-sdk-ts';
 
 const capability: Capability = {
   systemPrompt: '你是一个助手',
+  subAgentList: [{
+    name: 'researcher',
+    capability: { systemPrompt: '你负责查找支持证据' }
+  }],
   maxLlmRequests: 32,
   maxToolRounds: 8,
   maxToolCalls: 20,

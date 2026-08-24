@@ -4,7 +4,6 @@ import {
   AgentOSSubscribeConnectionStatus,
   EventType,
   FunctionCallLifecycleError,
-  type Agent,
   type AgentEvent,
   type AgentHistoryOptions,
   type AgentHistoryProcessOptions,
@@ -551,30 +550,9 @@ export class CronKitModule {
 export class AgentKitModule {
   constructor(private readonly client: AgentOSSDK) {}
 
-  getAgent(options: { agentId: string }) {
-    return this.client.withAppAuthRetry((token) => this.client.agentKit.getAgent(token, options.agentId));
-  }
-
-  createAgent(options: { agent: Agent }) {
-    return this.client.withAppAuthRetry((token) => this.client.agentKit.createAgent(token, options.agent));
-  }
-
-  updateAgent(options: { agentId: string; agent: Agent }) {
+  initSession(options: { capability?: Capability } = {}) {
     return this.client.withAppAuthRetry((token) =>
-      this.client.agentKit.updateAgent(token, options.agentId, options.agent)
-    );
-  }
-
-  deleteAgent(options: { agentId: string }) {
-    return this.client.withAppAuthRetry((token) => this.client.agentKit.deleteAgent(token, options.agentId));
-  }
-
-  initSession(options: { agentId?: string; capability?: Capability } = {}) {
-    return this.client.withAppAuthRetry((token) =>
-      this.client.agentKit.initSession(token, {
-        agentId: options.agentId,
-        capability: options.capability
-      })
+      this.client.agentKit.initSession(token, options.capability)
     );
   }
 

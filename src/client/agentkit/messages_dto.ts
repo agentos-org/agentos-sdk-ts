@@ -37,7 +37,6 @@ export interface Completions {
 
 export interface AgentMessage {
   sessionId: string;
-  agentId?: string;
   originalTaskId: string;
   parentTaskId?: string;
   taskId: string;
@@ -52,7 +51,6 @@ export interface AgentMessage {
 
 export interface AgentMessageChunk {
   sessionId: string;
-  agentId?: string;
   parentTaskId?: string;
   taskId: string;
   role: string;
@@ -140,7 +138,6 @@ export class FunctionCallLifecycleError extends Error {
 
 export interface Dispatch {
   dispatchId: string;
-  agentId: string;
   name: string;
   content: Content[];
 }
@@ -149,26 +146,6 @@ export interface TaskStatus {
   status: string;
   taskId?: string;
   description?: Record<string, unknown>;
-}
-
-export interface ReflectScore {
-  score: number;
-  description?: string;
-}
-
-export interface MessageScore {
-  content: Content[];
-  messageType: string;
-  message: string;
-  reflectScoreList: ReflectScore[];
-}
-
-export interface Reflection {
-  isPass: boolean;
-  messageScore: MessageScore;
-  passScore: number;
-  count: number;
-  maxCount: number;
 }
 
 export type { ToolReturn };
