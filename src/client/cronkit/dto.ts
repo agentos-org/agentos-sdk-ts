@@ -2,7 +2,9 @@ import type { AgentMessage } from '../agentkit/messages_dto';
 import type { Content } from '../shared/dto';
 
 export enum CronTaskConcurrency {
-  skipIfRunning = 'skipIfRunning'
+  allow = 'allow',
+  skipIfRunning = 'skipIfRunning',
+  replace = 'replace'
 }
 
 export interface CronSpec {
@@ -17,7 +19,6 @@ export interface CronTaskCreateRequest {
   name: string;
   schedule: string;
   spec: CronSpec;
-  userId?: string;
   sessionId?: string;
   timezone?: string;
   concurrency?: CronTaskConcurrency;
@@ -57,7 +58,6 @@ export interface CronTask {
   name: string;
   schedule: string;
   source: string;
-  userId?: string;
   sessionId?: string;
   timezone?: string;
   enabled: boolean;
@@ -76,6 +76,7 @@ export interface CronTaskListItem {
   schedule: string;
   enabled: boolean;
   status: string;
+  spec?: CronSpec;
   lastRunAt?: string;
   nextRunAt?: string;
 }
@@ -94,6 +95,7 @@ export interface CronRun {
   startedAt: string;
   hasDisplayableResult: boolean;
   finishedAt?: string;
+  modelId?: string;
   liteAgentSessionId?: string;
   error?: string;
   result?: Record<string, unknown>;
@@ -110,6 +112,7 @@ export interface CronRunListItem {
   startedAt: string;
   hasDisplayableResult: boolean;
   finishedAt?: string;
+  modelId?: string;
   displayText?: string;
 }
 

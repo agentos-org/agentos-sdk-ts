@@ -112,11 +112,14 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
           name: 'daily',
           schedule: '0 0 * * *',
           source: 'app',
+          sessionId: request.body.sessionId,
+          timezone: request.body.timezone,
           enabled: true,
           status: 'enabled',
           concurrency: 'skipIfRunning',
           createdAt: '2026-01-01T00:00:00.000Z',
           updatedAt: '2026-01-01T00:00:00.000Z',
+          nextRunAt: '2026-01-02T01:00:00.000Z',
           spec: request.body.spec
         });
       }
@@ -240,6 +243,8 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
     request: {
       name: 'daily',
       schedule: '0 0 * * *',
+      sessionId: 'session-cron-1',
+      timezone: 'Asia/Shanghai',
       spec: {
         systemPrompt: 'You are a scheduled agent.',
         content: [{ type: 'text', message: 'Generate the report.' }]
@@ -249,6 +254,12 @@ test('system, appkit, cronkit, modelkit, and toolkit flows work through the sdk'
   assert.equal(cronTask.spec.timeoutSeconds, 3600);
   assert.equal(state.lastCronCreateBody.concurrency, 'skipIfRunning');
   assert.equal(state.lastCronCreateBody.enabled, true);
+  assert.equal(state.lastCronCreateBody.sessionId, 'session-cron-1');
+  assert.equal(state.lastCronCreateBody.timezone, 'Asia/Shanghai');
+  assert.equal('userId' in state.lastCronCreateBody, false);
+  assert.equal(cronTask.sessionId, 'session-cron-1');
+  assert.equal(cronTask.timezone, 'Asia/Shanghai');
+  assert.equal(cronTask.nextRunAt, '2026-01-02T01:00:00.000Z');
 
   const models = await sdk.modelkit.listModels();
   assert.equal(models[0].task, 'chat');
@@ -1853,7 +1864,13 @@ test('supports direct cronkit client usage', async () => {
             name: 'daily-report',
             schedule: '0 9 * * *',
             enabled: true,
-            status: 'active'
+            status: 'active',
+            spec: {
+              systemPrompt: 'You are a scheduled agent.',
+              content: [{ type: 'text', message: 'Generate the report.' }],
+              modelId: 'model-1',
+              modelName: 'qwen-plus'
+            }
           }
         ]);
       }
@@ -1865,6 +1882,8 @@ test('supports direct cronkit client usage', async () => {
 
   assert.equal(tasks.length, 1);
   assert.equal(tasks[0].name, 'daily-report');
+  assert.equal(tasks[0].spec.modelId, 'model-1');
+  assert.equal(tasks[0].spec.modelName, 'qwen-plus');
 });
 
 test('api client enforces separate connect and receive timeouts', async () => {

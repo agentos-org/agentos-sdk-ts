@@ -2,6 +2,10 @@
 
 ## 2.0.0
 
+- breaking: align CronKit with kernel 0.2 by removing task `userId` and
+  documenting reusable LiteAgent sessions and IANA timezone scheduling.
+- feat: expose all Cron concurrency policies plus task-list specs and run model
+  IDs returned by AgentOS.
 - breaking: align AgentKit with LiteAgent SDK 0.4 by removing persistent Agent
   CRUD and `agentId`-based session initialization.
 - breaking: replace `Capability.sessionList` with recursive inline

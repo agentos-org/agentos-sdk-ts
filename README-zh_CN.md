@@ -243,18 +243,32 @@ new AgentOSSDK({
 | `listRunMessages({ runId, offset, limit })` | `runId`、`offset`、`limit` | 获取某次运行持久化保存的 `AgentMessage` 记录。 |
 | `deleteRun({ runId })` | `runId` | 删除某次运行及其持久化消息记录。 |
 
-`CronTaskCreateRequest.spec` 和 `CronTask.spec` 使用 CronKit 的任务 schema：
+Cron 任务可以复用已有 LiteAgent session，并按 IANA 时区计算调度时间：
 
 ```ts
-{
-  systemPrompt: 'You are a scheduled agent.',
-  content: [
-    { type: 'text', message: 'Generate the daily summary.' }
-  ],
-  modelId: 'gpt-4o'
-}
+import { CronTaskConcurrency } from 'agentos-sdk-ts';
+
+await sdk.cronkit.createTask({
+  request: {
+    name: '每日摘要',
+    schedule: '0 9 * * *',
+    sessionId: 'existing-liteagent-session',
+    timezone: 'Asia/Shanghai',
+    concurrency: CronTaskConcurrency.skipIfRunning,
+    spec: {
+      systemPrompt: 'You are a scheduled agent.',
+      content: [
+        { type: 'text', message: 'Generate the daily summary.' }
+      ],
+      modelId: 'gpt-4o'
+    }
+  }
+});
 ```
 
+- `sessionId` 为可选字段；提供后定时执行会复用该 session，否则 kernel 会在任务执行时初始化 LiteAgent session。
+- `timezone` 接受 `Asia/Shanghai` 等 IANA 时区；Cron 按该时区计算，`lastRunAt`、`nextRunAt` 和 run 时间均以 UTC 序列化。
+- `CronTaskConcurrency` 支持 `allow`、`skipIfRunning` 和 `replace`。
 - `modelId` 是可选请求字段，CronKit 会用它解析底层模型配置。
 - `modelName` 是可选返回字段，会出现在 `CronTask.spec` 中，表示最终解析后的模型名。
 
