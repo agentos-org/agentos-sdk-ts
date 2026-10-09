@@ -33,6 +33,7 @@ import { AppKitClient } from '../appkit/appkit_client';
 import { AuthKitClient } from '../authkit/authkit_client';
 import { CronKitClient } from '../cronkit/cronkit_client';
 import { DiscoveryKitClient } from '../discoverykit/discoverykit_client';
+import { HarnessKitClient } from '../harnesskit/harnesskit_client';
 import { ModelKitClient } from '../modelkit/modelkit_client';
 import { ModelTask } from '../modelkit/dto';
 import { SystemKitClient } from '../systemkit/systemkit_client';
@@ -60,6 +61,22 @@ import type {
   SelfInfo,
 } from '../discoverykit/dto';
 import type {
+  HarnessKitCommand,
+  HarnessKitCommandReceipt,
+  HarnessKitEngineId,
+  HarnessKitEngineSwitchResult,
+  HarnessKitEvent,
+  HarnessKitOperationalSnapshot,
+  HarnessKitEventsOptions,
+  HarnessKitRunAccepted,
+  HarnessKitRunRequest,
+  HarnessKitRunResult,
+  HarnessKitRuntimeInfo,
+  HarnessKitThreadDeleteResult,
+  HarnessKitThreadRenameResult,
+  HarnessKitThreadSnapshot
+} from '../harnesskit/dto';
+import type {
   HistoryQuery,
   IncomingTransferEvent,
   PolicyResponse,
@@ -69,7 +86,14 @@ import type {
   TransferSendRequest,
   TransferSession,
 } from '../transferkit/dto';
-import { ApiClient, ApiError, Subscription, asJsonMap, ensureError } from '../../utils';
+import {
+  ApiClient,
+  ApiError,
+  Subscription,
+  asJsonMap,
+  ensureError,
+  type RequestOptions
+} from '../../utils';
 import { getAgentOSBridgeTransportDefaults } from '../../bridge';
 
 export interface AgentOSSDKOptions {
@@ -108,6 +132,7 @@ export class AgentOSSDK {
   readonly authkit: AuthKitModule;
   readonly cronkit: CronKitModule;
   readonly discoverykit: DiscoveryKitModule;
+  readonly harnesskit: HarnessKitModule;
   readonly modelkit: ModelKitModule;
   readonly toolkit: ToolKitModule;
   readonly transferkit: TransferKitModule;
@@ -118,6 +143,7 @@ export class AgentOSSDK {
   readonly authKit: AuthKitClient;
   readonly cronKit: CronKitClient;
   readonly discoveryKit: DiscoveryKitClient;
+  readonly harnessKit: HarnessKitClient;
   readonly modelKit: ModelKitClient;
   readonly toolKit: ToolKitClient;
   readonly transferKit: TransferKitClient;
@@ -161,6 +187,7 @@ export class AgentOSSDK {
     this.authKit = new AuthKitClient(this.apiClient);
     this.cronKit = new CronKitClient(this.apiClient);
     this.discoveryKit = new DiscoveryKitClient(this.apiClient);
+    this.harnessKit = new HarnessKitClient(this.apiClient);
     this.modelKit = new ModelKitClient(this.apiClient);
     this.toolKit = new ToolKitClient(this.apiClient);
     this.transferKit = new TransferKitClient(this.apiClient);
@@ -169,6 +196,7 @@ export class AgentOSSDK {
     this.authkit = new AuthKitModule(this);
     this.cronkit = new CronKitModule(this);
     this.discoverykit = new DiscoveryKitModule(this);
+    this.harnesskit = new HarnessKitModule(this);
     this.modelkit = new ModelKitModule(this);
     this.toolkit = new ToolKitModule(this);
     this.transferkit = new TransferKitModule(this);
@@ -886,6 +914,69 @@ export class DiscoveryKitModule {
 
   unregister(): Promise<DiscoveryUnregisterResponse> {
     return this.client.withAppAuthRetry((token) => this.client.discoveryKit.unregister(token));
+  }
+}
+
+export class HarnessKitModule {
+  constructor(private readonly client: AgentOSSDK) {}
+
+  health(): Promise<{ status: string }> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.health(token));
+  }
+
+  getRuntime(): Promise<HarnessKitRuntimeInfo> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.getRuntime(token));
+  }
+
+  switchEngine(engine: HarnessKitEngineId): Promise<HarnessKitEngineSwitchResult> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.switchEngine(token, engine));
+  }
+
+  listThreads(): Promise<HarnessKitThreadSnapshot[]> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.listThreads(token));
+  }
+
+  getThread(threadId: string): Promise<HarnessKitThreadSnapshot> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.getThread(token, threadId));
+  }
+
+  renameThread(threadId: string, title: string): Promise<HarnessKitThreadRenameResult> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.renameThread(token, threadId, title));
+  }
+
+  deleteThread(threadId: string): Promise<HarnessKitThreadDeleteResult> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.deleteThread(token, threadId));
+  }
+
+  startRun(threadId: string, request: HarnessKitRunRequest): Promise<HarnessKitRunAccepted> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.startRun(token, threadId, request));
+  }
+
+  submitCommand(threadId: string, command: HarnessKitCommand): Promise<HarnessKitCommandReceipt> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.submitCommand(token, threadId, command));
+  }
+
+  events(
+    threadId: string,
+    options: HarnessKitEventsOptions = {}
+  ): Promise<AsyncGenerator<HarnessKitEvent>> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.events(token, threadId, options));
+  }
+
+  getRunResult(runId: string): Promise<HarnessKitRunResult> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.getRunResult(token, runId));
+  }
+
+  getOperationalSnapshot(): Promise<HarnessKitOperationalSnapshot> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.getOperationalSnapshot(token));
+  }
+
+  request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.request<T>(token, path, options));
+  }
+
+  requestStream(path: string, options: RequestOptions = {}): Promise<Response> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.requestStream(token, path, options));
   }
 }
 

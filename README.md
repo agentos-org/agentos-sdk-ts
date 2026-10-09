@@ -1,7 +1,7 @@
 # AgentOS SDK for TypeScript
 
 A lightweight TypeScript SDK for the AgentOS API, supporting Root, AgentKit, AppKit,
-CronKit, ModelKit, and ToolKit discovery endpoints. Use the unified
+HarnessKit, CronKit, ModelKit, and ToolKit discovery endpoints. Use the unified
 `AgentOSSDK` to avoid managing tokens manually.
 
 ## Features
@@ -9,6 +9,7 @@ CronKit, ModelKit, and ToolKit discovery endpoints. Use the unified
 - Root API: version check
 - AgentKit API: session init, chat stream/simple, history, stop/clear, callbacks
 - AppKit API: bundle registration and SSE subscription
+- HarnessKit API: Harness runtime, thread, run, command, result, and SSE event access
 - AuthKit API: OAuth-like authorization flow, token exchange, user info, grant management
 - CronKit API: cron task CRUD, run history, and scheduler control
 - DiscoveryKit API: nearby device discovery, self info, device register/unregister, SSE peer events
@@ -215,6 +216,7 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 | `authkit` | `AuthKitModule` | AuthKit OAuth authorization endpoints with internal token handling. |
 | `cronkit` | `CronKitModule` | CronKit task management endpoints with internal token handling. |
 | `discoverykit` | `DiscoveryKitModule` | DiscoveryKit nearby device discovery with internal token handling. |
+| `harnesskit` | `HarnessKitModule` | Harness runtime and conversation APIs with internal AppKit token handling. |
 | `modelkit` | `ModelKitModule` | ModelKit task-oriented model listing and chat / embedding / asr / tts clients. |
 | `toolkit` | `ToolKitModule` | ToolKit discovery endpoints and tool lifecycle event subscription. |
 | `transferkit` | `TransferKitModule` | TransferKit file transfer endpoints with internal token handling. |
@@ -577,6 +579,62 @@ interface TransferHistoryRecord {
   savedDir?: string;
 }
 ```
+
+### HarnessKitModule (`sdk.harnesskit`)
+
+HarnessKit forwards requests through the Gateway to the Harness runtime selected
+for the currently registered AppKit bundle. Register the app with
+`sdk.agentos.registerBundle()` first. An installable process App must be
+configured to receive a Harness runtime; the built-in Harness uses the host's
+default runtime. All methods below use the active AppKit token and retry once
+after an authentication failure.
+
+| Method | Parameters | Description |
+| --- | --- | --- |
+| `health()` | none | Checks Harness runtime health through the authenticated Gateway route. |
+| `getRuntime()` / `switchEngine(engine)` | `engine` | Reads the runtime engine or requests an engine switch. |
+| `listThreads()` / `getThread(threadId)` | `threadId` | Lists durable threads or reads one thread snapshot. |
+| `renameThread(threadId, title)` / `deleteThread(threadId)` | `threadId`, `title` | Updates a thread title or deletes an idle thread. |
+| `startRun(threadId, request)` | `threadId`, `HarnessKitRunRequest` | Starts a Harness run and returns its `runId`. |
+| `submitCommand(threadId, command)` | `threadId`, `HarnessKitCommand` | Submits work or control commands; rejected commands return their receipt. |
+| `events(threadId, options?)` | `threadId`, `afterSequence`, `runId`, `signal` | Opens a resumable SSE stream of typed `HarnessKitEvent` values. |
+| `getRunResult(runId)` | `runId` | Reads the current or terminal run result. |
+| `getOperationalSnapshot()` | none | Reads an operational snapshot when the runtime supports it. |
+| `request<T>(path, options?)` | Harness-relative path, `RequestOptions` | Calls other JSON Harness endpoints through `/harnesskit/*`. |
+| `requestStream(path, options?)` | Harness-relative path, `RequestOptions` | Opens a raw streaming response for other Harness endpoints. |
+
+```ts
+import { AgentOSSDK } from 'agentos-sdk-ts';
+
+const sdk = new AgentOSSDK();
+await sdk.agentos.registerBundle({ bundleId: 'com.demo.harness-app' });
+
+const runtime = await sdk.harnesskit.getRuntime();
+console.log('Harness engine:', runtime.activeEngine ?? runtime.engine);
+const accepted = await sdk.harnesskit.startRun('research-thread', {
+  requestId: crypto.randomUUID(),
+  goal: 'Summarize the latest project status',
+  llmConfig: {
+    provider: 'openai-compatible',
+    baseUrl: 'http://127.0.0.1:1234/v1',
+    model: 'local-model'
+  }
+});
+
+const events = await sdk.harnesskit.events('research-thread', {
+  runId: accepted.runId,
+  afterSequence: 0
+});
+for await (const event of events) {
+  console.log(event.type, event.data);
+}
+```
+
+`HarnessKitCommand` and `HarnessKitRunRequest` keep an open JSON shape so newer
+Harness request fields can pass through. `getOperationalSnapshot()` may return
+HTTP `501` when the configured engine does not expose the optional reader.
+In AgentOS Mobile WebViews, the native bridge must also support `/harnesskit/*`;
+unsupported bridge routes are surfaced as `ApiError`.
 
 ### OpenTool Exports
 

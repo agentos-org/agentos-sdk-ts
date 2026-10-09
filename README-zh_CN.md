@@ -1,7 +1,7 @@
 # AgentOS SDK for TypeScript
 
 一个轻量的 TypeScript SDK，用于访问 AgentOS API，支持 Root、AgentKit、AppKit、
-CronKit、ModelKit 和 ToolKit 发现接口。推荐使用统一的 `AgentOSSDK`，
+HarnessKit、CronKit、ModelKit 和 ToolKit 发现接口。推荐使用统一的 `AgentOSSDK`，
 无需手动管理 token。
 
 ## 功能
@@ -9,6 +9,7 @@ CronKit、ModelKit 和 ToolKit 发现接口。推荐使用统一的 `AgentOSSDK`
 - Root API：版本查询
 - AgentKit API：会话初始化、chat 流式/单次、历史记录、stop/clear、回调
 - AppKit API：bundle 注册与 SSE 订阅
+- HarnessKit API：Harness 运行时、线程、Run、命令、结果和 SSE 事件
 - AuthKit API：OAuth 授权流、token 交换、用户信息获取、授权管理
 - CronKit API：定时任务 CRUD、运行记录与调度器控制
 - DiscoveryKit API：附近设备发现、自身信息获取、设备注册/注销、SSE 设备事件流
@@ -209,6 +210,7 @@ new AgentOSSDK({
 | `authkit` | `AuthKitModule` | AuthKit OAuth 授权接口，内部处理 token。 |
 | `cronkit` | `CronKitModule` | CronKit 任务管理接口，内部处理 token。 |
 | `discoverykit` | `DiscoveryKitModule` | DiscoveryKit 附近设备发现接口，内部处理 token。 |
+| `harnesskit` | `HarnessKitModule` | Harness 运行时与会话接口，内部处理 AppKit token。 |
 | `modelkit` | `ModelKitModule` | ModelKit 基于任务的模型列表与 chat / embedding / asr / tts 客户端。 |
 | `toolkit` | `ToolKitModule` | ToolKit 发现接口与 tool 生命周期事件订阅。 |
 | `transferkit` | `TransferKitModule` | TransferKit 文件传输接口，内部处理 token。 |
@@ -566,6 +568,60 @@ interface TransferHistoryRecord {
   savedDir?: string;
 }
 ```
+
+### HarnessKitModule（`sdk.harnesskit`）
+
+HarnessKit 会通过 Gateway 将请求转发到当前 AppKit bundle 对应的 Harness
+运行时。先调用 `sdk.agentos.registerBundle()` 注册应用。可安装的进程 App
+需要在应用配置中声明 Harness runtime；内置 Harness 使用主机默认运行时。
+以下方法会自动使用当前 AppKit token，并在鉴权失败后刷新 token 重试一次。
+
+| 方法 | 参数 | 说明 |
+| --- | --- | --- |
+| `health()` | 无 | 通过需要鉴权的 Gateway 路由检查 Harness 运行时健康状态。 |
+| `getRuntime()` / `switchEngine(engine)` | `engine` | 读取运行时引擎信息或请求切换引擎。 |
+| `listThreads()` / `getThread(threadId)` | `threadId` | 列出持久化线程或读取单个线程快照。 |
+| `renameThread(threadId, title)` / `deleteThread(threadId)` | `threadId`、`title` | 修改线程标题或删除空闲线程。 |
+| `startRun(threadId, request)` | `threadId`、`HarnessKitRunRequest` | 启动 Harness Run 并返回 `runId`。 |
+| `submitCommand(threadId, command)` | `threadId`、`HarnessKitCommand` | 提交工作或控制命令；被拒绝的命令仍返回 receipt。 |
+| `events(threadId, options?)` | `threadId`、`afterSequence`、`runId`、`signal` | 订阅可恢复的 SSE 流，返回类型化 `HarnessKitEvent`。 |
+| `getRunResult(runId)` | `runId` | 获取当前或最终 Run 结果。 |
+| `getOperationalSnapshot()` | 无 | 在运行时支持时读取运行状态快照。 |
+| `request<T>(path, options?)` | Harness 相对路径、`RequestOptions` | 通过 `/harnesskit/*` 调用其他 JSON Harness 接口。 |
+| `requestStream(path, options?)` | Harness 相对路径、`RequestOptions` | 为其他 Harness 接口打开原始流式响应。 |
+
+```ts
+import { AgentOSSDK } from 'agentos-sdk-ts';
+
+const sdk = new AgentOSSDK();
+await sdk.agentos.registerBundle({ bundleId: 'com.demo.harness-app' });
+
+const runtime = await sdk.harnesskit.getRuntime();
+console.log('Harness 引擎：', runtime.activeEngine ?? runtime.engine);
+const accepted = await sdk.harnesskit.startRun('research-thread', {
+  requestId: crypto.randomUUID(),
+  goal: '总结项目最新状态',
+  llmConfig: {
+    provider: 'openai-compatible',
+    baseUrl: 'http://127.0.0.1:1234/v1',
+    model: 'local-model'
+  }
+});
+
+const events = await sdk.harnesskit.events('research-thread', {
+  runId: accepted.runId,
+  afterSequence: 0
+});
+for await (const event of events) {
+  console.log(event.type, event.data);
+}
+```
+
+`HarnessKitCommand` 和 `HarnessKitRunRequest` 保留开放的 JSON 字段，方便透传
+后续 Harness 新增字段。如果当前引擎未实现可选的 operational reader，
+`getOperationalSnapshot()` 可能返回 HTTP `501`。
+在 AgentOS Mobile WebView 中，Native bridge 也需要支持 `/harnesskit/*`；
+未支持的 bridge 路由会以 `ApiError` 暴露。
 
 ### OpenTool 导出
 

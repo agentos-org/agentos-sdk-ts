@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0
+
+- feat: add authenticated HarnessKit runtime, thread, run, command, result, and
+  resumable event-stream APIs.
+
 ## 2.0.0
 
 - breaking: align CronKit with kernel 0.2 by removing task `userId` and
