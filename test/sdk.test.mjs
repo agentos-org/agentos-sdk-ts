@@ -1516,6 +1516,314 @@ test('modelkit listModels normalizes task, capabilities, and remote flags', asyn
   assert.deepEqual(chatModels.map((m) => m.capabilities.reasoning), [false, true]);
 });
 
+test('modelkit listModels keeps the decisions output modality and app model flags', async () => {
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/modelkit/models') {
+        return jsonResponse([
+          {
+            id: 'sys-1',
+            name: 'systemone',
+            alias: 'systemone',
+            task: 'decision',
+            input: ['text', 'image'],
+            output: ['decisions'],
+            capabilities: { stream: false, tool_call: false, reasoning: false }
+          },
+          {
+            id: 'app-1',
+            name: 'app-chat',
+            alias: 'app-chat',
+            task: 'chat',
+            isAppModel: true,
+            appBundleId: 'com.demo.app'
+          },
+          { id: 'chat-1', name: 'plain', alias: 'plain', task: 'chat' }
+        ]);
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+
+  const models = await sdk.modelkit.listModels();
+
+  assert.equal(models[0].task, 'decision');
+  assert.deepEqual(models[0].input, ['text', 'image']);
+  assert.deepEqual(models[0].output, ['decisions']);
+  assert.equal(models[0].capabilities.stream, false);
+  assert.equal(models[0].isAppModel, false);
+  assert.equal('appBundleId' in models[0], false);
+  assert.equal(models[1].isAppModel, true);
+  assert.equal(models[1].appBundleId, 'com.demo.app');
+  assert.equal(models[2].isAppModel, false);
+
+  const decisionModels = await sdk.modelkit.listModelsByTask('decision');
+  assert.deepEqual(decisionModels.map((m) => m.id), ['sys-1']);
+});
+
+test('modelkit decision.create posts typed questions without a token and returns answers', async () => {
+  const seen = [];
+  const sdk = new AgentOSSDK({
+    baseUrl: 'http://example.local:8888/base',
+    fetch: createMockFetch((request) => {
+      seen.push(request);
+      if (request.pathname === '/base/modelkit/decision') {
+        return jsonResponse({
+          model: 'systemone',
+          answers: {
+            route: {
+              type: 'choice',
+              choice: 'chat',
+              probabilities: { chat: 0.9, search: 0.1 },
+              confidence: 0.9
+            },
+            urgency: { type: 'score', score: 3.5, probabilities: [0.1, 0.2, 0.7] },
+            angry: { type: 'noul', noul: 0.12, legend: { true: 'yes' } }
+          },
+          usage: { input_tokens: 21, output_tokens: 4 }
+        });
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+
+  const questions = {
+    route: {
+      type: 'choice',
+      instructions: 'route?',
+      criteria: { chat: 'small talk', search: 'lookup' }
+    },
+    urgency: { type: 'score', instructions: 'urgency?', criteria: ['low', 'mid', 'high'] },
+    angry: { type: 'noul', instructions: 'angry?' }
+  };
+  const response = await sdk.modelkit.decision.create({
+    model: 'systemone',
+    state: { text: 'hello' },
+    questions,
+    images: ['data:image/png;base64,AAAA']
+  });
+
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].method, 'POST');
+  assert.equal(seen[0].headers.authorization, undefined);
+  assert.deepEqual(seen[0].body, {
+    model: 'systemone',
+    state: { text: 'hello' },
+    questions,
+    images: ['data:image/png;base64,AAAA']
+  });
+  assert.equal(response.model, 'systemone');
+  assert.equal(response.answers.route.choice, 'chat');
+  assert.equal(response.answers.route.confidence, 0.9);
+  assert.deepEqual(response.answers.route.probabilities, { chat: 0.9, search: 0.1 });
+  assert.equal(response.answers.urgency.score, 3.5);
+  assert.equal(response.answers.angry.noul, 0.12);
+  assert.deepEqual(response.answers.angry.legend, { true: 'yes' });
+  assert.deepEqual(response.usage, { input_tokens: 21, output_tokens: 4 });
+});
+
+test('modelkit decision.create surfaces the server status and body', async () => {
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch(() => jsonResponse({ error: 'invalid questions' }, 400))
+  });
+
+  await assert.rejects(
+    () => sdk.modelkit.decision.create({ state: 's', questions: {} }),
+    (error) => {
+      assert.equal(error.name, 'ApiError');
+      assert.equal(error.status, 400);
+      assert.deepEqual(error.data, { error: 'invalid questions' });
+      return true;
+    }
+  );
+});
+
+test('modelkit listAppModels is public and normalizes every field', async () => {
+  const seen = [];
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      seen.push(request);
+      if (request.pathname === '/modelkit/app-models') {
+        return jsonResponse([
+          {
+            id: 'app-model-1',
+            name: 'router',
+            alias: 'router',
+            description: 'routes requests',
+            task: 'decision',
+            provider: 'openai_compatible',
+            input: ['text'],
+            output: ['decisions'],
+            capabilities: { stream: false, tool_call: false, reasoning: false },
+            baseUrl: 'http://127.0.0.1:9000',
+            hasApiKey: true,
+            contextWindowSize: 8192,
+            isDisabled: true,
+            appBundleId: 'com.demo.app',
+            appName: 'Demo'
+          },
+          { id: 'app-model-2', name: 'chat', task: 'chat', appBundleId: 'com.demo.app' }
+        ]);
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+
+  const models = await sdk.modelkit.listAppModels();
+
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].method, 'GET');
+  assert.equal(seen[0].headers.authorization, undefined);
+  assert.deepEqual(models[0], {
+    id: 'app-model-1',
+    name: 'router',
+    alias: 'router',
+    description: 'routes requests',
+    task: 'decision',
+    provider: 'openai_compatible',
+    input: ['text'],
+    output: ['decisions'],
+    capabilities: { stream: false, tool_call: false, reasoning: false },
+    baseUrl: 'http://127.0.0.1:9000',
+    hasApiKey: true,
+    contextWindowSize: 8192,
+    isDisabled: true,
+    appBundleId: 'com.demo.app',
+    appName: 'Demo'
+  });
+  assert.equal(models[1].hasApiKey, false);
+  assert.equal(models[1].isDisabled, false);
+  assert.equal('baseUrl' in models[1], false);
+  assert.equal('contextWindowSize' in models[1], false);
+  assert.deepEqual(models[1].input, ['text']);
+});
+
+test('modelkit app model write calls send the explicit bearer token and encoded paths', async () => {
+  const seen = [];
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      seen.push(request);
+      if (request.method === 'POST' && request.pathname === '/modelkit/app-models') {
+        return jsonResponse({ success: true, id: 'router' });
+      }
+      return jsonResponse({ success: true });
+    })
+  });
+  const client = sdk.modelKit;
+
+  const registered = await client.registerAppModel('token-1', {
+    id: 'router',
+    name: 'router',
+    task: 'decision',
+    baseUrl: 'http://127.0.0.1:9000',
+    apiKey: 'secret'
+  });
+  const updated = await client.updateAppModel('token-1', 'team/router 1', {
+    name: 'renamed',
+    task: 'decision',
+    capabilities: { reasoning: false }
+  });
+  await client.toggleAppModel('token-1', 'm1');
+  await client.unregisterAppModel('token-1', 'm1');
+
+  assert.deepEqual(registered, { success: true, id: 'router' });
+  assert.deepEqual(updated, { success: true });
+  assert.deepEqual(
+    seen.map((r) => [r.method, r.pathname]),
+    [
+      ['POST', '/modelkit/app-models'],
+      ['PUT', '/modelkit/app-models/team%2Frouter%201'],
+      ['POST', '/modelkit/app-models/m1/toggle'],
+      ['DELETE', '/modelkit/app-models/m1']
+    ]
+  );
+  for (const request of seen) {
+    assert.equal(request.headers.authorization, 'Bearer token-1');
+  }
+  assert.deepEqual(seen[0].body, {
+    id: 'router',
+    name: 'router',
+    task: 'decision',
+    baseUrl: 'http://127.0.0.1:9000',
+    apiKey: 'secret'
+  });
+  assert.deepEqual(seen[1].body, {
+    name: 'renamed',
+    task: 'decision',
+    capabilities: { reasoning: false }
+  });
+  assert.equal(seen[2].body, undefined);
+  assert.equal(seen[3].body, undefined);
+});
+
+test('modelkit registerAppModel keeps the status of ownership conflicts', async () => {
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch(() => jsonResponse({ error: 'owned by another app' }, 409))
+  });
+
+  await assert.rejects(
+    () => sdk.modelKit.registerAppModel('token-1', { id: 'x', name: 'x' }),
+    (error) => {
+      assert.equal(error.name, 'ApiError');
+      assert.equal(error.status, 409);
+      assert.deepEqual(error.data, { error: 'owned by another app' });
+      return true;
+    }
+  );
+});
+
+test('modelkit app model facade uses the registered app token and retries once on 401', async () => {
+  let registerCount = 0;
+  const attempts = [];
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/appkit/register') {
+        registerCount += 1;
+        return jsonResponse({ token: `token-v${registerCount}` });
+      }
+      if (request.pathname === '/modelkit/app-models') {
+        attempts.push(request.headers.authorization);
+        if (request.headers.authorization === 'Bearer token-v1') {
+          return jsonResponse({ error: 'unauthorized' }, 401);
+        }
+        return jsonResponse({ success: true, id: 'router' });
+      }
+      return jsonResponse({ success: true });
+    })
+  });
+  await sdk.agentos.registerBundle({ bundleId: 'com.demo.app' });
+
+  const result = await sdk.modelkit.registerAppModel({
+    request: { id: 'router', name: 'router' }
+  });
+
+  assert.deepEqual(result, { success: true, id: 'router' });
+  assert.equal(registerCount, 2);
+  assert.deepEqual(attempts, ['Bearer token-v1', 'Bearer token-v2']);
+
+  assert.deepEqual(await sdk.modelkit.updateAppModel({ modelId: 'router', request: { name: 'r2' } }), {
+    success: true
+  });
+  assert.deepEqual(await sdk.modelkit.toggleAppModel({ modelId: 'router' }), { success: true });
+  assert.deepEqual(await sdk.modelkit.unregisterAppModel({ modelId: 'router' }), { success: true });
+});
+
+test('modelkit app model write calls require registerBundle first', async () => {
+  const seen = [];
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      seen.push(request);
+      return jsonResponse({ success: true });
+    })
+  });
+
+  await assert.rejects(
+    () => sdk.modelkit.toggleAppModel({ modelId: 'router' }),
+    /Bearer token is not set/
+  );
+  assert.equal(seen.length, 0);
+});
+
 test('agentos bridge helpers detect injected mobile bridge and read context', async () => {
   const previousWindow = globalThis.window;
   try {

@@ -64,6 +64,28 @@ async function main() {
     ]
   });
   console.log(getMessageText(chatCompletion));
+
+  /// HTTP:
+  /// GET http://localhost:8888/modelkit/app-models
+  const appModels = await sdk.modelkit.listAppModels();
+  console.log(
+    `App models: ${appModels.map((model) => `${model.id}(${model.appBundleId})`).join(', ')}`
+  );
+
+  /// HTTP:
+  /// POST http://localhost:8888/modelkit/decision
+  /// Only runs when the gateway exposes a decision model.
+  const decisionModel = models.find((model) => model.task === 'decision');
+  if (decisionModel) {
+    const decision = await sdk.modelkit.decision.create({
+      model: decisionModel.name,
+      state: userMessage,
+      questions: {
+        angry: { type: 'noul', instructions: 'Is the user angry?' }
+      }
+    });
+    console.log(`angry: ${decision.answers.angry?.noul}`);
+  }
 }
 
 function getMessageText(chatCompletion) {

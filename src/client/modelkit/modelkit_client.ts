@@ -1,4 +1,10 @@
 import type {
+  AppModel,
+  AppModelRegistration,
+  AppModelUpdate,
+  AppModelWriteResult,
+  DecisionRequest,
+  DecisionResponse,
   ModelAsrRequest,
   ModelAsrResponse,
   ModelChatCompletionRequest,
@@ -111,23 +117,45 @@ export class ModelKitAsrClient {
 }
 
 /**
+ * Forwards typed-question decisions to `/modelkit/decision`.
+ *
+ * Decision models (`task: 'decision'`, llama.cpp `/v1/systemone`) score
+ * caller-provided options instead of generating text. No app token needed.
+ */
+export class ModelKitDecisionClient {
+  constructor(private readonly apiClient: ApiClient) {}
+
+  create(request: DecisionRequest): Promise<DecisionResponse> {
+    return this.apiClient.request<DecisionResponse>('/modelkit/decision', {
+      method: 'POST',
+      data: request
+    });
+  }
+}
+
+/**
  * Task-oriented ModelKit client.
  *
- * Splits requests by task (chat / embedding / asr / tts) to match the
- * agentos-api gateway routes, and encodes vision support via
+ * Splits requests by task (chat / embedding / asr / tts / decision) to match
+ * the agentos-api gateway routes, and encodes vision support via
  * `capabilities.vision` rather than a separate task.
+ *
+ * App-model write methods take the AppKit `bearerToken` explicitly; use
+ * `AgentOSSDK.modelkit` to have it attached and refreshed automatically.
  */
 export class ModelKitClient {
   readonly chat: ModelKitChatClient;
   readonly embedding: ModelKitEmbeddingClient;
   readonly asr: ModelKitAsrClient;
   readonly tts: ModelKitTtsClient;
+  readonly decision: ModelKitDecisionClient;
 
   constructor(private readonly apiClient: ApiClient = new ApiClient()) {
     this.chat = new ModelKitChatClient(this.apiClient);
     this.embedding = new ModelKitEmbeddingClient(this.apiClient);
     this.asr = new ModelKitAsrClient(this.apiClient);
     this.tts = new ModelKitTtsClient(this.apiClient);
+    this.decision = new ModelKitDecisionClient(this.apiClient);
   }
 
   async listModels(): Promise<ModelInfo[]> {
@@ -139,6 +167,67 @@ export class ModelKitClient {
     const all = await this.listModels();
     return all.filter((m) => m.task === task);
   }
+
+  /**
+   * Lists models registered by apps (`GET /modelkit/app-models`).
+   * Public endpoint, no token required. Disabled models are included; check
+   * `isDisabled`.
+   */
+  async listAppModels(): Promise<AppModel[]> {
+    const data = await this.apiClient.request<unknown[]>('/modelkit/app-models');
+    return asJsonList<Record<string, unknown>>(data).map((item) => normalizeAppModel(item));
+  }
+
+  /**
+   * Registers (or replaces) an app model (`POST /modelkit/app-models`).
+   *
+   * Re-registering an id owned by the same app replaces it (`updated: true`).
+   * Rejects with `ApiError` status 401 (missing/invalid token), 403
+   * (`appBundleId` mismatch), 409 (id owned by another app) or 400 (invalid
+   * body, unknown `task`).
+   */
+  registerAppModel(bearerToken: string, request: AppModelRegistration): Promise<AppModelWriteResult> {
+    return this.apiClient.request<AppModelWriteResult>('/modelkit/app-models', {
+      method: 'POST',
+      headers: authHeaders(bearerToken),
+      data: request
+    });
+  }
+
+  /** Partially updates an app model owned by the token's app (`PUT /modelkit/app-models/<id>`). */
+  updateAppModel(bearerToken: string, modelId: string, request: AppModelUpdate): Promise<AppModelWriteResult> {
+    return this.apiClient.request<AppModelWriteResult>(appModelPath(modelId), {
+      method: 'PUT',
+      headers: authHeaders(bearerToken),
+      data: request
+    });
+  }
+
+  /** Removes an app model owned by the token's app (`DELETE /modelkit/app-models/<id>`). */
+  unregisterAppModel(bearerToken: string, modelId: string): Promise<AppModelWriteResult> {
+    return this.apiClient.request<AppModelWriteResult>(appModelPath(modelId), {
+      method: 'DELETE',
+      headers: authHeaders(bearerToken)
+    });
+  }
+
+  /** Flips the enabled/disabled state of an owned app model (`POST /modelkit/app-models/<id>/toggle`). */
+  toggleAppModel(bearerToken: string, modelId: string): Promise<AppModelWriteResult> {
+    return this.apiClient.request<AppModelWriteResult>(`${appModelPath(modelId)}/toggle`, {
+      method: 'POST',
+      headers: authHeaders(bearerToken)
+    });
+  }
+}
+
+function appModelPath(modelId: string): string {
+  return `/modelkit/app-models/${encodeURIComponent(modelId)}`;
+}
+
+function authHeaders(bearerToken: string): Record<string, string> {
+  return {
+    authorization: `Bearer ${bearerToken}`
+  };
 }
 
 function serializeChatRequest(request: ModelChatCompletionRequest): Record<string, unknown> {
@@ -228,12 +317,15 @@ function isHttpBaseUrl(baseUrl: string): boolean {
   }
 }
 
+function normalizeTask(value: unknown): ModelTask {
+  const taskValue = String(value ?? '').toLowerCase();
+  return (Object.values(ModelTask) as string[]).includes(taskValue)
+    ? (taskValue as ModelTask)
+    : ModelTask.chat;
+}
+
 function normalizeModelInfo(item: Record<string, unknown>): ModelInfo {
-  const taskValue = String(item.task ?? item.type ?? '').toLowerCase();
-  const task =
-    (Object.values(ModelTask) as string[]).includes(taskValue)
-      ? (taskValue as ModelTask)
-      : ModelTask.chat;
+  const task = normalizeTask(item.task ?? item.type);
   const input = normalizeModalities(item.input);
   const output = normalizeModalities(item.output);
   const rawCaps = (item.capabilities as Record<string, unknown> | undefined) ?? {};
@@ -253,7 +345,38 @@ function normalizeModelInfo(item: Record<string, unknown>): ModelInfo {
       reasoning: Boolean(rawCaps.reasoning)
     },
     isRemote: Boolean(item.isRemote),
-    isCustom: Boolean(item.isCustom)
+    isCustom: Boolean(item.isCustom),
+    isAppModel: Boolean(item.isAppModel),
+    ...(item.appBundleId === undefined || item.appBundleId === null
+      ? {}
+      : { appBundleId: String(item.appBundleId) })
+  };
+}
+
+function normalizeAppModel(item: Record<string, unknown>): AppModel {
+  const rawCaps = (item.capabilities as Record<string, unknown> | undefined) ?? {};
+  return {
+    id: String(item.id ?? ''),
+    name: String(item.name ?? ''),
+    alias: String(item.alias ?? ''),
+    description: String(item.description ?? ''),
+    task: normalizeTask(item.task),
+    provider: String(item.provider ?? ''),
+    input: normalizeModalities(item.input),
+    output: normalizeModalities(item.output),
+    capabilities: {
+      stream: rawCaps.stream === undefined ? true : Boolean(rawCaps.stream),
+      tool_call: Boolean(rawCaps.tool_call),
+      reasoning: Boolean(rawCaps.reasoning)
+    },
+    ...(item.baseUrl === undefined || item.baseUrl === null ? {} : { baseUrl: String(item.baseUrl) }),
+    hasApiKey: Boolean(item.hasApiKey),
+    ...(item.contextWindowSize === undefined || item.contextWindowSize === null
+      ? {}
+      : { contextWindowSize: Number(item.contextWindowSize) }),
+    isDisabled: Boolean(item.isDisabled),
+    appBundleId: String(item.appBundleId ?? ''),
+    appName: String(item.appName ?? '')
   };
 }
 

@@ -13,8 +13,9 @@ HarnessKit、CronKit、ModelKit 和 ToolKit 发现接口。推荐使用统一的
 - AuthKit API：OAuth 授权流、token 交换、用户信息获取、授权管理
 - CronKit API：定时任务 CRUD、运行记录与调度器控制
 - DiscoveryKit API：附近设备发现、自身信息获取、设备注册/注销、SSE 设备事件流
-- ModelKit API：基于任务的模型列表，以及 `/modelkit/*` 下的 OpenAI 兼容
-  chat / embedding / asr / tts 客户端
+- ModelKit API：基于任务的模型列表，`/modelkit/*` 下的 OpenAI 兼容
+  chat / embedding / asr / tts 客户端，带类型问题的 decision 推理，以及外部
+  app model 注册
 - ToolKit API：tool 列表、tool 定义读取与 tool 生命周期事件订阅
 - TransferKit API：设备间文件传输（发送/接收/进度流/取消/应答）、接收策略、传输历史管理
 
@@ -135,7 +136,7 @@ const sdk = new AgentOSSDK({ baseUrl: 'http://localhost:8888' });
 const models = await sdk.modelkit.listModels();
 console.log(models.map((model) => model.alias));
 
-// 可按任务（chat / embedding / asr / tts）过滤。
+// 可按任务（chat / embedding / asr / tts / decision）过滤。
 const chatModels = await sdk.modelkit.listModelsByTask(ModelTask.chat);
 
 const completion = await sdk.modelkit.chat.create({
@@ -150,6 +151,88 @@ const completion = await sdk.modelkit.chat.create({
 
 console.log(completion.choices?.[0]?.message?.content);
 ```
+
+### 使用 ModelKit Decision
+
+Decision 模型（`ModelTask.decision`，由 llama.cpp `/v1/systemone` 提供）不生成
+文本，而是针对给定的 `state`，对带类型问题的选项打分。`POST /modelkit/decision`
+不需要 app token。
+
+```ts
+import { AgentOSSDK, ModelTask } from 'agentos-sdk-ts';
+
+const sdk = new AgentOSSDK({ baseUrl: 'http://localhost:8888' });
+
+const decisionModels = await sdk.modelkit.listModelsByTask(ModelTask.decision);
+
+const response = await sdk.modelkit.decision.create({
+  model: decisionModels[0]?.name, // 可选，缺省时由网关选择默认模型
+  state: { text: '我的订单迟迟不到，太让人生气了！' },
+  questions: {
+    // 单选（选项 -> 描述）
+    route: {
+      type: 'choice',
+      instructions: '应该交给哪个团队处理？',
+      criteria: { billing: '支付与发票', support: '商品或物流问题' }
+    },
+    // 有序评分，2-10 个等级描述
+    urgency: { type: 'score', instructions: '这件事有多紧急？', criteria: ['低', '中', '高'] },
+    // 是/否判断，`criteria`（{ true, false }）可选
+    angry: { type: 'noul', instructions: '用户是否生气了？' }
+  }
+  // images: ['data:image/png;base64,...'], // 支持图片输入的模型可用
+});
+
+console.log(response.answers.route.choice, response.answers.route.confidence);
+console.log(response.answers.urgency.score, response.answers.angry.noul);
+console.log(response.usage?.input_tokens, response.usage?.output_tokens);
+```
+
+响应按服务端原样返回（使用 wire 字段名）。每个答案包含与问题 `type` 对应的字段
+（`choice` + `confidence`、`score` 或 `noul`）；`probabilities` 和 `legend` 原样透传。
+
+### 注册 App Model
+
+App 可以把自己的模型注册到网关。注册后的模型会出现在 `listModels()` /
+`listModelsByTask()` 中，并带有 `isAppModel: true` 与所属的 `appBundleId`。
+
+```ts
+await sdk.agentos.registerBundle({ bundleId: 'com.example.app' });
+
+// 注册（或替换）模型，只有 `id` 和 `name` 必填。
+const result = await sdk.modelkit.registerAppModel({
+  request: {
+    id: 'my-router',
+    name: 'my-router',
+    task: ModelTask.decision,
+    baseUrl: 'http://127.0.0.1:9000',
+    apiKey: 'upstream-secret' // 由服务端保存，不会再返回
+  }
+});
+console.log(result.updated); // 替换了该 app 已有的同 id 模型时为 true
+
+// 局部更新：未设置的字段保持不变。
+await sdk.modelkit.updateAppModel({
+  modelId: 'my-router',
+  request: { description: '分流客服工单' }
+});
+
+// 启用/停用，无需删除。
+await sdk.modelkit.toggleAppModel({ modelId: 'my-router' });
+
+// 列出所有 app 注册的模型（公开接口，无需 token）。
+const appModels = await sdk.modelkit.listAppModels();
+console.log(appModels.map((m) => `${m.id} by ${m.appBundleId} disabled=${m.isDisabled}`));
+
+await sdk.modelkit.unregisterAppModel({ modelId: 'my-router' });
+```
+
+写操作会自动附带 app token，并在 `401` 时刷新一次。失败时 reject 带服务端状态码的
+`ApiError`：`401` token 无效，`403` 不是所属 app 或 `appBundleId` 不匹配，
+`404` id 不存在，`409` id 属于其他 app，`400` 请求体非法或 `task` 未知。
+
+Decision 模型会被服务端规范化：输入为 `text`（可选 `image`），输出为
+`decisions`，`stream` / `tool_call` / `reasoning` 均为 `false`。
 
 ### 使用 AgentOS Mobile WebView Bridge
 
@@ -211,7 +294,7 @@ new AgentOSSDK({
 | `cronkit` | `CronKitModule` | CronKit 任务管理接口，内部处理 token。 |
 | `discoverykit` | `DiscoveryKitModule` | DiscoveryKit 附近设备发现接口，内部处理 token。 |
 | `harnesskit` | `HarnessKitModule` | Harness 运行时与会话接口，内部处理 AppKit token。 |
-| `modelkit` | `ModelKitModule` | ModelKit 基于任务的模型列表与 chat / embedding / asr / tts 客户端。 |
+| `modelkit` | `ModelKitModule` | ModelKit 基于任务的模型列表、chat / embedding / asr / tts / decision 客户端与 app model 注册。 |
 | `toolkit` | `ToolKitModule` | ToolKit 发现接口与 tool 生命周期事件订阅。 |
 | `transferkit` | `TransferKitModule` | TransferKit 文件传输接口，内部处理 token。 |
 | `dispose()` | `Promise<void>` | 释放 SDK 资源并取消当前 AppKit 订阅。 |
@@ -298,11 +381,21 @@ function-call 及 callback handler；缺失或为空时回退到外层 root chat
 | 方法/属性 | 类型 | 说明 |
 | --- | --- | --- |
 | `listModels()` | `Promise<ModelInfo[]>` | 从 `/modelkit/models` 获取可用模型列表。 |
-| `listModelsByTask(task)` | `Promise<ModelInfo[]>` | 按 `ModelTask`（`chat` / `embedding` / `asr` / `tts`）过滤模型。 |
+| `listModelsByTask(task)` | `Promise<ModelInfo[]>` | 按 `ModelTask`（`chat` / `embedding` / `asr` / `tts` / `decision`）过滤模型。 |
 | `chat` | `ModelKitChatClient` | OpenAI 兼容 chat 客户端，使用 `{baseUrl}/modelkit/chat`。 |
 | `embedding` | `ModelKitEmbeddingClient` | `/modelkit/embedding` 下的 OpenAI 兼容 embeddings 客户端。 |
 | `asr` | `ModelKitAsrClient` | `/modelkit/asr` 下的语音转文字客户端。 |
 | `tts` | `ModelKitTtsClient` | `/modelkit/tts` 下的文字转语音客户端。 |
+| `decision` | `ModelKitDecisionClient` | `decision.create({ model?, state, questions, images? })` → `POST /modelkit/decision`，返回 `DecisionResponse`。 |
+| `listAppModels()` | `Promise<AppModel[]>` | 通过 `GET /modelkit/app-models` 列出 app 注册的模型（公开接口）。 |
+| `registerAppModel({ request })` | `Promise<AppModelWriteResult>` | 注册或替换 app model（`POST /modelkit/app-models`，需 app token）。 |
+| `updateAppModel({ modelId, request })` | `Promise<AppModelWriteResult>` | 局部更新自己的 app model（`PUT /modelkit/app-models/<id>`）。 |
+| `unregisterAppModel({ modelId })` | `Promise<AppModelWriteResult>` | 删除自己的 app model（`DELETE /modelkit/app-models/<id>`）。 |
+| `toggleAppModel({ modelId })` | `Promise<AppModelWriteResult>` | 启用/停用自己的 app model（`POST /modelkit/app-models/<id>/toggle`）。 |
+
+App 注册的模型在 `ModelInfo` 中带有 `isAppModel` 与 `appBundleId`。底层
+`ModelKitClient`（`sdk.modelKit`）提供同样的 app model 方法，只是 bearer token
+作为第一个参数显式传入，例如 `sdk.modelKit.registerAppModel(token, request)`。
 
 ### ToolKitModule（`sdk.toolkit`）
 
@@ -765,6 +858,9 @@ class MyHandler extends AgentMessageHandler {
 
 - 调用受 token 保护的 API 前，先执行 `agentos.registerBundle(...)`。
 - `sdk.modelkit.chat.createStream(...)` 会持续产出解析后的 SSE JSON，直到收到 `[DONE]`。
+- `sdk.modelkit.decision` 请求 `/modelkit/decision`；app model 管理请求
+  `/modelkit/app-models`。只有 app model 的写操作需要先调用
+  `agentos.registerBundle(...)`。
 - `sdk.toolkit.subscribeToolEvents(...)` 需要 daemon API key。
 - 外部集成应只从 `agentos-sdk-ts` 导入。
 

@@ -35,7 +35,7 @@ import { CronKitClient } from '../cronkit/cronkit_client';
 import { DiscoveryKitClient } from '../discoverykit/discoverykit_client';
 import { HarnessKitClient } from '../harnesskit/harnesskit_client';
 import { ModelKitClient } from '../modelkit/modelkit_client';
-import { ModelTask } from '../modelkit/dto';
+import { ModelTask, type AppModelRegistration, type AppModelUpdate } from '../modelkit/dto';
 import { SystemKitClient } from '../systemkit/systemkit_client';
 import { ToolKitClient } from '../toolkit/toolkit_client';
 import { TransferKitClient } from '../transferkit/transferkit_client';
@@ -797,7 +797,8 @@ export class AgentKitModule {
 }
 
 /**
- * Entry point for the task-oriented ModelKit API (chat / embedding / asr / tts).
+ * Entry point for the task-oriented ModelKit API
+ * (chat / embedding / asr / tts / decision) and app-model registration.
  */
 export class ModelKitModule {
   constructor(private readonly client: AgentOSSDK) {}
@@ -818,12 +819,52 @@ export class ModelKitModule {
     return this.client.modelKit.tts;
   }
 
+  get decision() {
+    return this.client.modelKit.decision;
+  }
+
   listModels() {
     return this.client.modelKit.listModels();
   }
 
   listModelsByTask(task: ModelTask) {
     return this.client.modelKit.listModelsByTask(task);
+  }
+
+  /** Lists models registered by apps. No app registration needed. */
+  listAppModels() {
+    return this.client.modelKit.listAppModels();
+  }
+
+  /**
+   * Registers (or replaces) a model owned by the current app. Requires
+   * `registerBundle` first; the app token is attached automatically.
+   */
+  registerAppModel(options: { request: AppModelRegistration }) {
+    return this.client.withAppAuthRetry((token) =>
+      this.client.modelKit.registerAppModel(token, options.request)
+    );
+  }
+
+  /** Partially updates a model owned by the current app. */
+  updateAppModel(options: { modelId: string; request: AppModelUpdate }) {
+    return this.client.withAppAuthRetry((token) =>
+      this.client.modelKit.updateAppModel(token, options.modelId, options.request)
+    );
+  }
+
+  /** Removes a model owned by the current app. */
+  unregisterAppModel(options: { modelId: string }) {
+    return this.client.withAppAuthRetry((token) =>
+      this.client.modelKit.unregisterAppModel(token, options.modelId)
+    );
+  }
+
+  /** Enables or disables a model owned by the current app. */
+  toggleAppModel(options: { modelId: string }) {
+    return this.client.withAppAuthRetry((token) =>
+      this.client.modelKit.toggleAppModel(token, options.modelId)
+    );
   }
 }
 

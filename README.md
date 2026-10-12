@@ -13,8 +13,9 @@ HarnessKit, CronKit, ModelKit, and ToolKit discovery endpoints. Use the unified
 - AuthKit API: OAuth-like authorization flow, token exchange, user info, grant management
 - CronKit API: cron task CRUD, run history, and scheduler control
 - DiscoveryKit API: nearby device discovery, self info, device register/unregister, SSE peer events
-- ModelKit API: task-oriented model listing and OpenAI-compatible chat /
-  embedding / asr / tts clients under `/modelkit/*`
+- ModelKit API: task-oriented model listing, OpenAI-compatible chat /
+  embedding / asr / tts clients under `/modelkit/*`, typed-question decision
+  inference, and external app-model registration
 - ToolKit API: tool listing, tool definition loading, and tool lifecycle event subscription
 - TransferKit API: device-to-device file transfer (send/receive/progress stream/cancel/respond), receive policy, transfer history
 
@@ -136,7 +137,7 @@ const sdk = new AgentOSSDK({ baseUrl: 'http://localhost:8888' });
 const models = await sdk.modelkit.listModels();
 console.log(models.map((model) => model.alias));
 
-// Optionally filter by task (chat / embedding / asr / tts).
+// Optionally filter by task (chat / embedding / asr / tts / decision).
 const chatModels = await sdk.modelkit.listModelsByTask(ModelTask.chat);
 
 const completion = await sdk.modelkit.chat.create({
@@ -151,6 +152,92 @@ const completion = await sdk.modelkit.chat.create({
 
 console.log(completion.choices?.[0]?.message?.content);
 ```
+
+### Use ModelKit Decision
+
+Decision models (`ModelTask.decision`, served by llama.cpp `/v1/systemone`) do
+not generate text. They score the options of typed questions about a given
+`state`. `POST /modelkit/decision` needs no app token.
+
+```ts
+import { AgentOSSDK, ModelTask } from 'agentos-sdk-ts';
+
+const sdk = new AgentOSSDK({ baseUrl: 'http://localhost:8888' });
+
+const decisionModels = await sdk.modelkit.listModelsByTask(ModelTask.decision);
+
+const response = await sdk.modelkit.decision.create({
+  model: decisionModels[0]?.name, // optional, the gateway picks a default
+  state: { text: 'My order is late and I am furious!' },
+  questions: {
+    // Pick one option (option -> description).
+    route: {
+      type: 'choice',
+      instructions: 'Which team should handle this?',
+      criteria: { billing: 'Payment and invoices', support: 'Product or delivery problems' }
+    },
+    // Ordinal scale with 2-10 level descriptions.
+    urgency: { type: 'score', instructions: 'How urgent is this?', criteria: ['low', 'medium', 'high'] },
+    // Yes/no judgement. `criteria` ({ true, false }) is optional.
+    angry: { type: 'noul', instructions: 'Is the user angry?' }
+  }
+  // images: ['data:image/png;base64,...'], // for models with image input
+});
+
+console.log(response.answers.route.choice, response.answers.route.confidence);
+console.log(response.answers.urgency.score, response.answers.angry.noul);
+console.log(response.usage?.input_tokens, response.usage?.output_tokens);
+```
+
+The response is returned as sent by the server (wire field names). Each answer
+carries the field matching its question `type` (`choice` + `confidence`,
+`score`, or `noul`); `probabilities` and `legend` are passed through untouched.
+
+### Register an App Model
+
+Apps can register their own models into the gateway. Registered models show up
+in `listModels()` / `listModelsByTask()` with `isAppModel: true` and the owning
+`appBundleId`.
+
+```ts
+await sdk.agentos.registerBundle({ bundleId: 'com.example.app' });
+
+// Register (or replace) a model. Only `id` and `name` are required.
+const result = await sdk.modelkit.registerAppModel({
+  request: {
+    id: 'my-router',
+    name: 'my-router',
+    task: ModelTask.decision,
+    baseUrl: 'http://127.0.0.1:9000',
+    apiKey: 'upstream-secret' // stored by the server, never returned
+  }
+});
+console.log(result.updated); // true when an existing model of this app was replaced
+
+// Partial update: unset fields stay unchanged.
+await sdk.modelkit.updateAppModel({
+  modelId: 'my-router',
+  request: { description: 'Routes support tickets' }
+});
+
+// Enable/disable without deleting.
+await sdk.modelkit.toggleAppModel({ modelId: 'my-router' });
+
+// List every app-registered model (public, no token needed).
+const appModels = await sdk.modelkit.listAppModels();
+console.log(appModels.map((m) => `${m.id} by ${m.appBundleId} disabled=${m.isDisabled}`));
+
+await sdk.modelkit.unregisterAppModel({ modelId: 'my-router' });
+```
+
+Write calls attach the app token automatically and refresh it once on `401`.
+They reject with an `ApiError` carrying the server status: `401` invalid token,
+`403` not the owning app or `appBundleId` mismatch, `404` unknown id, `409` the
+id belongs to another app, `400` invalid body or unknown `task`.
+
+Decision models are normalized by the server: input `text` (+ optional
+`image`), output `decisions`, and `stream` / `tool_call` / `reasoning` all
+`false`.
 
 ### Use AgentOS Mobile WebView Bridge
 
@@ -217,7 +304,7 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 | `cronkit` | `CronKitModule` | CronKit task management endpoints with internal token handling. |
 | `discoverykit` | `DiscoveryKitModule` | DiscoveryKit nearby device discovery with internal token handling. |
 | `harnesskit` | `HarnessKitModule` | Harness runtime and conversation APIs with internal AppKit token handling. |
-| `modelkit` | `ModelKitModule` | ModelKit task-oriented model listing and chat / embedding / asr / tts clients. |
+| `modelkit` | `ModelKitModule` | ModelKit task-oriented model listing, chat / embedding / asr / tts / decision clients, and app-model registration. |
 | `toolkit` | `ToolKitModule` | ToolKit discovery endpoints and tool lifecycle event subscription. |
 | `transferkit` | `TransferKitModule` | TransferKit file transfer endpoints with internal token handling. |
 | `dispose()` | `Promise<void>` | Releases SDK resources and cancels active AppKit subscription. |
@@ -306,11 +393,22 @@ chat session ID is used as a fallback.
 | Method/Property | Type | Description |
 | --- | --- | --- |
 | `listModels()` | `Promise<ModelInfo[]>` | Fetches available models from `/modelkit/models`. |
-| `listModelsByTask(task)` | `Promise<ModelInfo[]>` | Filters models by `ModelTask` (`chat` / `embedding` / `asr` / `tts`). |
+| `listModelsByTask(task)` | `Promise<ModelInfo[]>` | Filters models by `ModelTask` (`chat` / `embedding` / `asr` / `tts` / `decision`). |
 | `chat` | `ModelKitChatClient` | OpenAI-compatible chat client using `{baseUrl}/modelkit/chat`. |
 | `embedding` | `ModelKitEmbeddingClient` | OpenAI-compatible embeddings client under `/modelkit/embedding`. |
 | `asr` | `ModelKitAsrClient` | Speech-to-text client under `/modelkit/asr`. |
 | `tts` | `ModelKitTtsClient` | Text-to-speech client under `/modelkit/tts`. |
+| `decision` | `ModelKitDecisionClient` | `decision.create({ model?, state, questions, images? })` → `POST /modelkit/decision`, returns `DecisionResponse`. |
+| `listAppModels()` | `Promise<AppModel[]>` | Lists app-registered models from `GET /modelkit/app-models` (public). |
+| `registerAppModel({ request })` | `Promise<AppModelWriteResult>` | Registers or replaces an app model (`POST /modelkit/app-models`, app token). |
+| `updateAppModel({ modelId, request })` | `Promise<AppModelWriteResult>` | Partially updates an owned app model (`PUT /modelkit/app-models/<id>`). |
+| `unregisterAppModel({ modelId })` | `Promise<AppModelWriteResult>` | Removes an owned app model (`DELETE /modelkit/app-models/<id>`). |
+| `toggleAppModel({ modelId })` | `Promise<AppModelWriteResult>` | Enables/disables an owned app model (`POST /modelkit/app-models/<id>/toggle`). |
+
+`ModelInfo` reports `isAppModel` and `appBundleId` for app-registered models.
+The low-level `ModelKitClient` (`sdk.modelKit`) exposes the same app-model
+methods with the bearer token as the first argument, for example
+`sdk.modelKit.registerAppModel(token, request)`.
 
 ### ToolKitModule (`sdk.toolkit`)
 
@@ -783,6 +881,9 @@ class MyHandler extends AgentMessageHandler {
 
 - Call `agentos.registerBundle(...)` before using token-protected APIs.
 - `sdk.modelkit.chat.createStream(...)` yields parsed SSE JSON frames until `[DONE]`.
+- `sdk.modelkit.decision` targets `/modelkit/decision`; app-model management
+  targets `/modelkit/app-models`. Only app-model writes need
+  `agentos.registerBundle(...)` first.
 - `sdk.toolkit.subscribeToolEvents(...)` requires a daemon API key.
 - External integrations should only import from `agentos-sdk-ts`.
 

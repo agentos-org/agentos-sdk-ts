@@ -5,23 +5,31 @@
  * Declared as a string union (instead of a TypeScript enum) so callers can
  * pass string literals without importing an extra symbol.
  */
-export type ModelTask = 'chat' | 'embedding' | 'asr' | 'tts';
+export type ModelTask = 'chat' | 'embedding' | 'asr' | 'tts' | 'decision';
 
-/** Frozen lookup table for callers that want to access the value by key. */
+/**
+ * Frozen lookup table for callers that want to access the value by key.
+ *
+ * `decision` models (llama.cpp `/v1/systemone`) answer typed questions by
+ * scoring caller-provided options; they never generate text.
+ */
 export const ModelTask = Object.freeze({
   chat: 'chat',
   embedding: 'embedding',
   asr: 'asr',
-  tts: 'tts'
+  tts: 'tts',
+  decision: 'decision'
 } as const);
 
-export type Modality = 'text' | 'image' | 'audio' | 'video';
+/** `decisions` is the output modality of `decision` models. */
+export type Modality = 'text' | 'image' | 'audio' | 'video' | 'decisions';
 
 export const Modality = Object.freeze({
   text: 'text',
   image: 'image',
   audio: 'audio',
-  video: 'video'
+  video: 'video',
+  decisions: 'decisions'
 } as const);
 
 /** Capability flags that are orthogonal to input/output modalities. */
@@ -45,6 +53,10 @@ export interface ModelInfo {
   capabilities: ModelCapabilities;
   isRemote?: boolean;
   isCustom?: boolean;
+  /** `true` when a third-party app registered this model (see `registerAppModel`). */
+  isAppModel?: boolean;
+  /** Bundle ID of the app that registered the model. Only set for app models. */
+  appBundleId?: string;
 }
 
 export interface ModelChatMessage {
@@ -147,4 +159,156 @@ export interface ModelAsrResponse {
   duration?: number;
   segments?: Array<Record<string, unknown>>;
   [key: string]: unknown;
+}
+
+/** Question primitive accepted by decision models. */
+export type DecisionQuestionType = 'choice' | 'score' | 'noul';
+
+export const DecisionQuestionType = Object.freeze({
+  choice: 'choice',
+  score: 'score',
+  noul: 'noul'
+} as const);
+
+/** Pick exactly one option. `criteria` maps every option to its description. */
+export interface DecisionChoiceQuestion {
+  type: 'choice';
+  instructions: string;
+  criteria: Record<string, string>;
+}
+
+/** Ordinal scale. `criteria` lists the 2-10 level descriptions in order. */
+export interface DecisionScoreQuestion {
+  type: 'score';
+  instructions: string;
+  criteria: string[];
+}
+
+/** Yes/no judgement. `criteria` optionally describes `true` and `false`. */
+export interface DecisionNoulQuestion {
+  type: 'noul';
+  instructions: string;
+  criteria?: { true?: string; false?: string };
+}
+
+export type DecisionQuestion = DecisionChoiceQuestion | DecisionScoreQuestion | DecisionNoulQuestion;
+
+/** Request body of `POST /modelkit/decision`. */
+export interface DecisionRequest {
+  /** Decision model id; the gateway picks a default when omitted. */
+  model?: string;
+  /** A string, JSON object or JSON array describing the situation. */
+  state: string | Record<string, unknown> | unknown[];
+  /** Question id -> question. Answers come back under the same ids. */
+  questions: Record<string, DecisionQuestion>;
+  /** Optional data URLs, for models that accept `image` input. */
+  images?: string[];
+  [key: string]: unknown;
+}
+
+/**
+ * Answer to one question. Only the field matching `type` is populated:
+ * `choice` (with `confidence`) for choice, `score` for score, `noul` for noul.
+ * `probabilities` and `legend` are passed through exactly as the server
+ * returns them.
+ */
+export interface DecisionAnswer {
+  type?: DecisionQuestionType;
+  choice?: string;
+  score?: number;
+  noul?: number;
+  probabilities?: unknown;
+  confidence?: number;
+  legend?: unknown;
+  [key: string]: unknown;
+}
+
+export interface DecisionUsage {
+  input_tokens: number;
+  output_tokens: number;
+  [key: string]: unknown;
+}
+
+/** Response of `POST /modelkit/decision`. */
+export interface DecisionResponse {
+  model?: string;
+  /** Answers keyed by the question ids of the request. */
+  answers: Record<string, DecisionAnswer>;
+  usage?: DecisionUsage;
+  [key: string]: unknown;
+}
+
+/** Capability flags of app models (no `vision`; image input is an input modality). */
+export interface AppModelCapabilities {
+  stream: boolean;
+  tool_call: boolean;
+  reasoning: boolean;
+}
+
+/**
+ * A model registered by a third-party app (`GET /modelkit/app-models`).
+ * The API key is never returned; `hasApiKey` only tells whether one is stored.
+ */
+export interface AppModel {
+  id: string;
+  name: string;
+  alias: string;
+  description: string;
+  task: ModelTask;
+  provider: string;
+  input: Modality[];
+  output: Modality[];
+  capabilities: AppModelCapabilities;
+  baseUrl?: string;
+  hasApiKey: boolean;
+  contextWindowSize?: number;
+  /** Disabled models stay registered but are hidden from model lists. */
+  isDisabled: boolean;
+  /** Bundle ID of the app that owns this model. */
+  appBundleId: string;
+  appName: string;
+}
+
+/**
+ * Request body of `registerAppModel`. Only `id` and `name` are required; unset
+ * fields are omitted so the server applies its own defaults.
+ *
+ * Decision models (`task: 'decision'`) are normalized by the server to input
+ * `text` (+ optional `image`), output `decisions` and no capabilities.
+ */
+export interface AppModelRegistration {
+  id: string;
+  name: string;
+  alias?: string;
+  description?: string;
+  task?: ModelTask;
+  provider?: string;
+  input?: Modality[];
+  output?: Modality[];
+  capabilities?: Partial<AppModelCapabilities>;
+  /** Upstream endpoint the gateway forwards to (decision default path: `/v1/systemone`). */
+  baseUrl?: string;
+  /** Upstream credential. Stored by the server and never returned. */
+  apiKey?: string;
+  contextWindowSize?: number;
+  /** Must match the bundle ID of the bearer token when provided. */
+  appBundleId?: string;
+  appName?: string;
+}
+
+/**
+ * Request body of `updateAppModel` (partial update). Unset fields are left
+ * unchanged. `apiKey` is overwritten only when non-empty. When `task` changes,
+ * input/output/capabilities that are not provided are reset to the new task's
+ * defaults. The owning `appBundleId` cannot be changed.
+ */
+export type AppModelUpdate = Partial<Omit<AppModelRegistration, 'id' | 'appBundleId'>>;
+
+/** Result of an app-model write call (register / update / unregister / toggle). */
+export interface AppModelWriteResult {
+  success: boolean;
+  /** Model id; returned by register only. */
+  id?: string;
+  /** `true` when register replaced an existing model of the same app. */
+  updated?: boolean;
 }
