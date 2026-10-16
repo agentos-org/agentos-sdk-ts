@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.2.0
+## 2.1.0
 
 - feat: add ModelKit decision inference. `ModelTask.decision`,
   `Modality.decisions` and `sdk.modelkit.decision.create(...)`
@@ -15,9 +15,6 @@
 - feat: `ModelInfo` now reports `isAppModel` and `appBundleId` for models
   registered by apps.
 - fix: models with `decisions` output are no longer reported as `text` output.
-
-## 2.1.0
-
 - feat: add authenticated HarnessKit runtime, thread, run, command, result, and
   resumable event-stream APIs.
 

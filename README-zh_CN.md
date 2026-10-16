@@ -716,6 +716,33 @@ for await (const event of events) {
 在 AgentOS Mobile WebView 中，Native bridge 也需要支持 `/harnesskit/*`；
 未支持的 bridge 路由会以 `ApiError` 暴露。
 
+### 为 Harness 指定 System One 决策模型
+
+Harness 可以使用 ModelKit 的 `decision` 模型进行复杂度判断和工具选择。
+使用 ModelKit 模型的 `id` 指定；模型凭据和服务端点由宿主管理。启动 Run 时，
+在请求中设置 `decisionModelConfig`；提交 `submit_turn` 或 `edit_and_resend`
+命令时，设置 `decisionModelConfigOverride`。直接调用置信度阈值默认为 `0.75`。
+
+```ts
+const decisionModels = await sdk.modelkit.listModelsByTask('decision');
+const decisionModel = decisionModels[0];
+
+if (decisionModel) {
+  await sdk.harnesskit.submitCommand('research-thread', {
+    type: 'submit_turn',
+    commandId: crypto.randomUUID(),
+    input: '继续研究并选择合适的工具。',
+    decisionModelConfigOverride: {
+      modelId: decisionModel.id,
+      directCallConfidence: 0.75
+    }
+  });
+}
+```
+
+通过 `startRun` 启动时，在 `HarnessKitRunRequest` 中使用相同配置字段
+`decisionModelConfig`。省略字段时，Harness 会按默认行为选择决策方式。
+
 ### OpenTool 导出
 
 包根入口保持 browser-safe；完整的 `opentool-ts` 转导出请走显式 Node 子入口：

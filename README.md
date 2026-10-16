@@ -734,6 +734,35 @@ HTTP `501` when the configured engine does not expose the optional reader.
 In AgentOS Mobile WebViews, the native bridge must also support `/harnesskit/*`;
 unsupported bridge routes are surfaced as `ApiError`.
 
+### Select a System One Decision Model for Harness
+
+Harness can use a ModelKit `decision` model for complexity checks and tool
+selection. Select it by its ModelKit `id`; the host resolves its provider
+credentials and endpoint. Set `decisionModelConfig` on a run request, or use
+`decisionModelConfigOverride` on a `submit_turn` or `edit_and_resend` command.
+The confidence threshold defaults to `0.75`.
+
+```ts
+const decisionModels = await sdk.modelkit.listModelsByTask('decision');
+const decisionModel = decisionModels[0];
+
+if (decisionModel) {
+  await sdk.harnesskit.submitCommand('research-thread', {
+    type: 'submit_turn',
+    commandId: crypto.randomUUID(),
+    input: 'Continue the research and choose the relevant tools.',
+    decisionModelConfigOverride: {
+      modelId: decisionModel.id,
+      directCallConfidence: 0.75
+    }
+  });
+}
+```
+
+For `startRun`, pass the same config as `decisionModelConfig` in
+`HarnessKitRunRequest`. Omitting either field leaves decision-model selection
+to the Harness default behavior.
+
 ### OpenTool Exports
 
 The package root stays browser-safe. Import full `opentool-ts` re-exports from

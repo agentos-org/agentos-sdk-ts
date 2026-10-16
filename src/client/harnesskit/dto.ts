@@ -71,11 +71,20 @@ export interface HarnessKitLlmConfig {
   [key: string]: unknown;
 }
 
+/** Decision model selected from ModelKit for a Harness request or turn. */
+export interface HarnessKitDecisionModelConfig {
+  /** ModelKit model ID; provider credentials and endpoints remain host-managed. */
+  modelId: string;
+  /** Confidence threshold for direct tool calls. The Harness default is 0.75. */
+  directCallConfidence?: number;
+}
+
 /** Request payload accepted by POST /v1/threads/{threadId}/runs. */
 export interface HarnessKitRunRequest {
   requestId: string;
   goal: string;
   llmConfig: HarnessKitLlmConfig;
+  decisionModelConfig?: HarnessKitDecisionModelConfig | null;
   actorId?: string;
   messages?: HarnessKitThreadMessage[];
   context?: HarnessKitJsonObject;
@@ -94,6 +103,8 @@ export interface HarnessKitCommand {
   type: string;
   commandId: string;
   threadId?: string;
+  /** Supported by submit_turn and edit_and_resend commands. */
+  decisionModelConfigOverride?: HarnessKitDecisionModelConfig | null;
   [key: string]: unknown;
 }
 
