@@ -152,6 +152,35 @@ const completion = await sdk.modelkit.chat.create({
 console.log(completion.choices?.[0]?.message?.content);
 ```
 
+### 按来源分组模型
+
+每个 `ModelInfo` 都带有 `source`（`ModelSource`），表示模型互斥的来源。请按它分组/
+打标签，而不要再组合 `isRemote` / `isCustom` / `isAppModel` 自行推导：
+
+| `ModelSource` | 含义 | 建议分组 |
+| --- | --- | --- |
+| `local` | 在本机运行 | 本地模型 |
+| `platform` | AgentOS 平台提供的远端模型 | 平台模型 |
+| `custom` | 用户自行配置的远端模型 | 自定义模型 |
+| `app` | 第三方 app 注册的模型 | `App · ${appName}`（每个 app 一组） |
+
+```ts
+import { ModelSource, type ModelInfo } from 'agentos-sdk-ts';
+
+const groups = new Map<string, ModelInfo[]>();
+for (const model of await sdk.modelkit.listModels()) {
+  const title =
+    model.source === ModelSource.app
+      ? `App · ${model.appName ?? model.appBundleId}`
+      : model.source;
+  groups.set(title, [...(groups.get(title) ?? []), model]);
+}
+```
+
+app 模型还会带有 `appBundleId` 与 `appName`（app 的可读名称，用作分组标题；
+`appName` 仅在网关返回时才有值，缺失时请回退到 `appBundleId`）。对于尚未提供
+`source` 的旧网关，或 `source` 为未知值时，会按网关的规则由旧布尔字段推导。
+
 ### 使用 ModelKit Decision
 
 Decision 模型（`ModelTask.decision`，由 llama.cpp `/v1/systemone` 提供）不生成
@@ -194,7 +223,8 @@ console.log(response.usage?.input_tokens, response.usage?.output_tokens);
 ### 注册 App Model
 
 App 可以把自己的模型注册到网关。注册后的模型会出现在 `listModels()` /
-`listModelsByTask()` 中，并带有 `isAppModel: true` 与所属的 `appBundleId`。
+`listModelsByTask()` 中，并带有 `source: 'app'`、`isAppModel: true`、所属的
+`appBundleId` 与 `appName`。
 
 注册时传入的 `id` 是 app 自己的本地 id（1-64 个字符，取自 `[A-Za-z0-9._-]`），只需
 在本 app 内唯一。网关对外把模型暴露为 `<id>@<bundleId>`（`qualifiedId`），
@@ -400,7 +430,8 @@ function-call 及 callback handler；缺失或为空时回退到外层 root chat
 | `unregisterAppModel({ modelId })` | `Promise<AppModelWriteResult>` | 删除自己的 app model（`DELETE /modelkit/app-models/<id>`）。 |
 | `toggleAppModel({ modelId })` | `Promise<AppModelWriteResult>` | 启用/停用自己的 app model（`POST /modelkit/app-models/<id>/toggle`）。 |
 
-App 注册的模型在 `ModelInfo` 中带有 `isAppModel` 与 `appBundleId`。底层
+`ModelInfo` 带有 `source`（`ModelSource`：`local` / `platform` / `custom` / `app`），
+是模型互斥的来源。App 注册的模型还会带有 `isAppModel`、`appBundleId` 与 `appName`。底层
 `ModelKitClient`（`sdk.modelKit`）提供同样的 app model 方法，只是 bearer token
 作为第一个参数显式传入，例如 `sdk.modelKit.registerAppModel(token, request)`。
 

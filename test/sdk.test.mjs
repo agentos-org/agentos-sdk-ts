@@ -18,6 +18,7 @@ import {
   isOpenToolProvisionFailedEvent,
   isOpenToolProvisionSucceededEvent,
   isAgentOSBridgeAvailable,
+  ModelSource,
   normalizeCapability,
   parseSse,
   ToolKitClient
@@ -1559,6 +1560,101 @@ test('modelkit listModels keeps the decisions output modality and app model flag
 
   const decisionModels = await sdk.modelkit.listModelsByTask('decision');
   assert.deepEqual(decisionModels.map((m) => m.id), ['sys-1']);
+});
+
+test('modelkit ModelSource exposes the gateway wire names', () => {
+  assert.deepEqual(Object.values(ModelSource), ['local', 'platform', 'custom', 'app']);
+  assert.equal(Object.isFrozen(ModelSource), true);
+});
+
+test('modelkit listModels reports source and appName from the gateway', async () => {
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/modelkit/models') {
+        return jsonResponse([
+          { id: 'a1', name: 'local-chat', task: 'chat', source: 'local' },
+          { id: 'b2', name: 'platform-chat', task: 'chat', isRemote: true, source: 'platform' },
+          {
+            id: 'c3',
+            name: 'custom-chat',
+            task: 'chat',
+            isRemote: true,
+            isCustom: true,
+            source: 'custom'
+          },
+          {
+            id: 'chat-1@com.demo.app',
+            name: 'app-chat',
+            task: 'chat',
+            isRemote: true,
+            source: 'app',
+            isAppModel: true,
+            appBundleId: 'com.demo.app',
+            appName: ' Demo App '
+          }
+        ]);
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+
+  const models = await sdk.modelkit.listModels();
+
+  assert.deepEqual(models.map((m) => m.source), ['local', 'platform', 'custom', 'app']);
+  assert.equal(models[3].appBundleId, 'com.demo.app');
+  assert.equal(models[3].appName, 'Demo App');
+  for (const model of models.slice(0, 3)) {
+    assert.equal('appName' in model, false);
+  }
+});
+
+test('modelkit listModels derives source when the gateway does not send it', async () => {
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/modelkit/models') {
+        return jsonResponse([
+          { id: 'a1', name: 'local', task: 'chat' },
+          { id: 'b2', name: 'platform', task: 'chat', isRemote: true },
+          { id: 'c3', name: 'custom', task: 'chat', isRemote: true, isCustom: true },
+          // 没有 isRemote 时，即便 isCustom 为 true 也以运行位置为准。
+          { id: 'd4', name: 'local-custom', task: 'chat', isCustom: true },
+          {
+            id: 'e5',
+            name: 'app',
+            task: 'chat',
+            isRemote: true,
+            isCustom: true,
+            isAppModel: true,
+            appBundleId: 'com.demo.app'
+          },
+          // 未知、空或大小写不同的 source：未知/空回退为推导，大小写不敏感。
+          { id: 'f6', name: 'unknown', task: 'chat', isRemote: true, source: 'system' },
+          { id: 'g7', name: 'empty', task: 'chat', source: '' },
+          { id: 'h8', name: 'upper', task: 'chat', source: ' APP ' },
+          // 空白 appName 视为没有。
+          { id: 'i9', name: 'blank', task: 'chat', isAppModel: true, appName: '   ' }
+        ]);
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+
+  const models = await sdk.modelkit.listModels();
+
+  assert.deepEqual(models.map((m) => m.source), [
+    'local',
+    'platform',
+    'custom',
+    'local',
+    'app',
+    'platform',
+    'local',
+    'app',
+    'app'
+  ]);
+  // 网关没有给出 appName 时不臆造，调用方可回退到 appBundleId。
+  assert.equal('appName' in models[4], false);
+  assert.equal('appName' in models[8], false);
 });
 
 test('modelkit decision.create posts typed questions without a token and returns answers', async () => {

@@ -16,6 +16,13 @@
   the same methods with an explicit `bearerToken` argument.
 - feat: `ModelInfo` now reports `isAppModel` and `appBundleId` for models
   registered by apps.
+- feat: `ModelInfo` now reports `source` (`ModelSource`: `local` / `platform` /
+  `custom` / `app`), the gateway's mutually exclusive model origin, and
+  `appName` for app models. Group and label models by `source` (for example
+  `App · ${appName}`) instead of combining `isRemote` / `isCustom` /
+  `isAppModel`. `source` is always set: it is derived from those flags with the
+  gateway's rules when the gateway predates `source` or reports an unknown
+  value. `appName` is only set when the gateway reports a non-blank one.
 - feat: app models are addressed as `<id>@<bundleId>`. `AppModel.qualifiedId`
   and `AppModelWriteResult.qualifiedId` carry the full ID to use as the `model`
   of requests; it matches the model `id` in `listModels()`. `qualifiedId` falls

@@ -14,7 +14,7 @@ import type {
   ModelInfo,
   ModelTtsRequest
 } from './dto';
-import { Modality, ModelTask } from './dto';
+import { Modality, ModelSource, ModelTask } from './dto';
 import {
   ApiClient,
   asJsonList,
@@ -332,11 +332,36 @@ function normalizeTask(value: unknown): ModelTask {
     : ModelTask.chat;
 }
 
+/**
+ * 网关给出的 `source` 优先；缺失或未知值（旧网关）时按网关规则由布尔字段推导：
+ * 应用模型恒为 app，其余按运行位置与是否自定义区分。
+ */
+function normalizeModelSource(
+  value: unknown,
+  flags: { isRemote: boolean; isCustom: boolean; isAppModel: boolean }
+): ModelSource {
+  if (value !== undefined && value !== null) {
+    const parsed = String(value).trim().toLowerCase();
+    if ((Object.values(ModelSource) as string[]).includes(parsed)) {
+      return parsed as ModelSource;
+    }
+  }
+  if (flags.isAppModel) return ModelSource.app;
+  if (!flags.isRemote) return ModelSource.local;
+  return flags.isCustom ? ModelSource.custom : ModelSource.platform;
+}
+
 function normalizeModelInfo(item: Record<string, unknown>): ModelInfo {
   const task = normalizeTask(item.task ?? item.type);
   const input = normalizeModalities(item.input);
   const output = normalizeModalities(item.output);
   const rawCaps = (item.capabilities as Record<string, unknown> | undefined) ?? {};
+  const isRemote = Boolean(item.isRemote);
+  const isCustom = Boolean(item.isCustom);
+  const isAppModel = Boolean(item.isAppModel);
+  // 网关没有给出（或为空白）的 appName 不臆造，调用方可回退到 appBundleId。
+  const appName =
+    item.appName === undefined || item.appName === null ? '' : String(item.appName).trim();
   return {
     id: String(item.id ?? ''),
     name: String(item.name ?? ''),
@@ -352,12 +377,14 @@ function normalizeModelInfo(item: Record<string, unknown>): ModelInfo {
       stream: rawCaps.stream === undefined ? true : Boolean(rawCaps.stream),
       reasoning: Boolean(rawCaps.reasoning)
     },
-    isRemote: Boolean(item.isRemote),
-    isCustom: Boolean(item.isCustom),
-    isAppModel: Boolean(item.isAppModel),
+    isRemote,
+    isCustom,
+    source: normalizeModelSource(item.source, { isRemote, isCustom, isAppModel }),
+    isAppModel,
     ...(item.appBundleId === undefined || item.appBundleId === null
       ? {}
-      : { appBundleId: String(item.appBundleId) })
+      : { appBundleId: String(item.appBundleId) }),
+    ...(appName === '' ? {} : { appName })
   };
 }
 

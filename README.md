@@ -153,6 +153,38 @@ const completion = await sdk.modelkit.chat.create({
 console.log(completion.choices?.[0]?.message?.content);
 ```
 
+### Group Models by Source
+
+Every `ModelInfo` carries `source` (`ModelSource`), the mutually exclusive origin
+of the model. Group and label models by it instead of combining `isRemote` /
+`isCustom` / `isAppModel`:
+
+| `ModelSource` | Meaning | Suggested group |
+| --- | --- | --- |
+| `local` | Runs on this device | Local Models |
+| `platform` | Remote model provided by the AgentOS platform | Platform Models |
+| `custom` | Remote model configured by the user | Custom Models |
+| `app` | Registered by a third-party app | `App · ${appName}` (one group per app) |
+
+```ts
+import { ModelSource, type ModelInfo } from 'agentos-sdk-ts';
+
+const groups = new Map<string, ModelInfo[]>();
+for (const model of await sdk.modelkit.listModels()) {
+  const title =
+    model.source === ModelSource.app
+      ? `App · ${model.appName ?? model.appBundleId}`
+      : model.source;
+  groups.set(title, [...(groups.get(title) ?? []), model]);
+}
+```
+
+App models additionally report `appBundleId` and `appName` (the human-readable
+app name, for group titles; `appName` is only set when the gateway reports one,
+so fall back to `appBundleId`). Against gateways that predate `source`, or when
+it holds an unknown value, `source` is derived from the legacy flags with the
+gateway's rules.
+
 ### Use ModelKit Decision
 
 Decision models (`ModelTask.decision`, served by llama.cpp `/v1/systemone`) do
@@ -196,8 +228,8 @@ carries the field matching its question `type` (`choice` + `confidence`,
 ### Register an App Model
 
 Apps can register their own models into the gateway. Registered models show up
-in `listModels()` / `listModelsByTask()` with `isAppModel: true` and the owning
-`appBundleId`.
+in `listModels()` / `listModelsByTask()` with `source: 'app'`,
+`isAppModel: true`, the owning `appBundleId` and its `appName`.
 
 The `id` you register is your own local id (1-64 characters from
 `[A-Za-z0-9._-]`); it only has to be unique within your app. The gateway exposes
@@ -414,7 +446,9 @@ chat session ID is used as a fallback.
 | `unregisterAppModel({ modelId })` | `Promise<AppModelWriteResult>` | Removes an owned app model (`DELETE /modelkit/app-models/<id>`). |
 | `toggleAppModel({ modelId })` | `Promise<AppModelWriteResult>` | Enables/disables an owned app model (`POST /modelkit/app-models/<id>/toggle`). |
 
-`ModelInfo` reports `isAppModel` and `appBundleId` for app-registered models.
+`ModelInfo` reports `source` (`ModelSource`: `local` / `platform` / `custom` /
+`app`), the mutually exclusive origin of the model. App-registered models
+additionally report `isAppModel`, `appBundleId` and `appName`.
 The low-level `ModelKitClient` (`sdk.modelKit`) exposes the same app-model
 methods with the bearer token as the first argument, for example
 `sdk.modelKit.registerAppModel(token, request)`.

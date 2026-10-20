@@ -32,6 +32,29 @@ export const Modality = Object.freeze({
   decisions: 'decisions'
 } as const);
 
+/**
+ * Mutually exclusive origin of a model, as reported by the gateway's `source`
+ * field of `/modelkit/models`.
+ *
+ * Group and label models by it instead of combining `isRemote`, `isCustom` and
+ * `isAppModel`. Run location (on-device vs. cloud) is secondary information and
+ * is not part of the group name.
+ *
+ * - `local`: runs on this device.
+ * - `platform`: a remote model provided by the AgentOS platform.
+ * - `custom`: a remote model the user configured.
+ * - `app`: registered by a third-party app through `registerAppModel`.
+ */
+export type ModelSource = 'local' | 'platform' | 'custom' | 'app';
+
+/** Frozen lookup table for callers that want to access the value by key. */
+export const ModelSource = Object.freeze({
+  local: 'local',
+  platform: 'platform',
+  custom: 'custom',
+  app: 'app'
+} as const);
+
 /** Capability flags that are orthogonal to input/output modalities. */
 export interface ModelCapabilities {
   vision: boolean;
@@ -53,10 +76,26 @@ export interface ModelInfo {
   capabilities: ModelCapabilities;
   isRemote?: boolean;
   isCustom?: boolean;
+  /**
+   * Mutually exclusive origin of the model. Group and label models by it.
+   *
+   * Always set: when the gateway predates `source` or reports an unknown value,
+   * it is derived from `isRemote` / `isCustom` / `isAppModel` with the gateway's
+   * rules (an app model is `app`; otherwise a non-remote model is `local`, a
+   * remote custom model is `custom` and any other remote model is `platform`).
+   */
+  source: ModelSource;
   /** `true` when a third-party app registered this model (see `registerAppModel`). */
   isAppModel?: boolean;
   /** Bundle ID of the app that registered the model. Only set for app models. */
   appBundleId?: string;
+  /**
+   * Human-readable name of the app that registered the model, for group titles
+   * in model pickers (for example `App · ${appName}`). Only set for app models,
+   * and only when the gateway reports a non-blank one; fall back to
+   * `appBundleId` otherwise.
+   */
+  appName?: string;
 }
 
 export interface ModelChatMessage {

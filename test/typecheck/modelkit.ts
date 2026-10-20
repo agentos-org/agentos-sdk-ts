@@ -9,7 +9,7 @@ import type {
   DecisionResponse,
   ModelInfo
 } from '../../src/index';
-import { Modality, ModelTask } from '../../src/index';
+import { Modality, ModelSource, ModelTask } from '../../src/index';
 
 declare const sdk: AgentOSSDK;
 
@@ -60,6 +60,16 @@ void modality;
 declare const model: ModelInfo;
 void model.isAppModel;
 void model.appBundleId;
+void model.appName;
+
+// `source` is the mutually exclusive origin of a model and always set.
+const source: ModelSource = model.source;
+const appSource: ModelSource = ModelSource.app;
+void source;
+void appSource;
+// @ts-expect-error `system` is not a known model source.
+const invalidSource: ModelSource = 'system';
+void invalidSource;
 
 // App models: only `id` and `name` are required to register.
 const registration: AppModelRegistration = { id: 'router', name: 'router' };
