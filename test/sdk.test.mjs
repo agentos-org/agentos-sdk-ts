@@ -1742,8 +1742,7 @@ test('modelkit listAppModels is public and normalizes every field', async () => 
       if (request.pathname === '/modelkit/app-models') {
         return jsonResponse([
           {
-            id: 'app-model-1',
-            qualifiedId: 'app-model-1@com.demo.app',
+            id: '6f78dcce6717',
             name: 'router',
             alias: 'router',
             description: 'routes requests',
@@ -1759,7 +1758,7 @@ test('modelkit listAppModels is public and normalizes every field', async () => 
             appBundleId: 'com.demo.app',
             appName: 'Demo'
           },
-          { id: 'app-model-2', name: 'chat', task: 'chat', appBundleId: 'com.demo.app' }
+          { id: 'b35bf2726675', name: 'chat', task: 'chat', appBundleId: 'com.demo.app' }
         ]);
       }
       throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
@@ -1772,8 +1771,7 @@ test('modelkit listAppModels is public and normalizes every field', async () => 
   assert.equal(seen[0].method, 'GET');
   assert.equal(seen[0].headers.authorization, undefined);
   assert.deepEqual(models[0], {
-    id: 'app-model-1',
-    qualifiedId: 'app-model-1@com.demo.app',
+    id: '6f78dcce6717',
     name: 'router',
     alias: 'router',
     description: 'routes requests',
@@ -1789,8 +1787,7 @@ test('modelkit listAppModels is public and normalizes every field', async () => 
     appBundleId: 'com.demo.app',
     appName: 'Demo'
   });
-  // 旧网关不返回 qualifiedId：回退为裸 id（它就是按裸 id 路由的）。
-  assert.equal(models[1].qualifiedId, 'app-model-2');
+  assert.equal(models[1].id, 'b35bf2726675');
   assert.equal(models[1].hasApiKey, false);
   assert.equal(models[1].isDisabled, false);
   assert.equal('baseUrl' in models[1], false);
@@ -1798,13 +1795,13 @@ test('modelkit listAppModels is public and normalizes every field', async () => 
   assert.deepEqual(models[1].input, ['text']);
 });
 
-test('modelkit app model write calls send the explicit bearer token and encoded paths', async () => {
+test('modelkit app model write calls send the explicit bearer token and id paths', async () => {
   const seen = [];
   const sdk = new AgentOSSDK({
     fetch: createMockFetch((request) => {
       seen.push(request);
       if (request.method === 'POST' && request.pathname === '/modelkit/app-models') {
-        return jsonResponse({ success: true, id: 'router', qualifiedId: 'router@com.demo.app' });
+        return jsonResponse({ success: true, id: '6f78dcce6717' });
       }
       return jsonResponse({ success: true });
     })
@@ -1812,36 +1809,34 @@ test('modelkit app model write calls send the explicit bearer token and encoded 
   const client = sdk.modelKit;
 
   const registered = await client.registerAppModel('token-1', {
-    id: 'router',
     name: 'router',
     task: 'decision',
     baseUrl: 'http://127.0.0.1:9000',
     apiKey: 'secret'
   });
-  const updated = await client.updateAppModel('token-1', 'team/router 1', {
+  const updated = await client.updateAppModel('token-1', '6f78dcce6717', {
     name: 'renamed',
     task: 'decision',
     capabilities: { reasoning: false }
   });
-  await client.toggleAppModel('token-1', 'm1');
-  await client.unregisterAppModel('token-1', 'm1');
+  await client.toggleAppModel('token-1', '6f78dcce6717');
+  await client.unregisterAppModel('token-1', '6f78dcce6717');
 
-  assert.deepEqual(registered, { success: true, id: 'router', qualifiedId: 'router@com.demo.app' });
+  assert.deepEqual(registered, { success: true, id: '6f78dcce6717' });
   assert.deepEqual(updated, { success: true });
   assert.deepEqual(
     seen.map((r) => [r.method, r.pathname]),
     [
       ['POST', '/modelkit/app-models'],
-      ['PUT', '/modelkit/app-models/team%2Frouter%201'],
-      ['POST', '/modelkit/app-models/m1/toggle'],
-      ['DELETE', '/modelkit/app-models/m1']
+      ['PUT', '/modelkit/app-models/6f78dcce6717'],
+      ['POST', '/modelkit/app-models/6f78dcce6717/toggle'],
+      ['DELETE', '/modelkit/app-models/6f78dcce6717']
     ]
   );
   for (const request of seen) {
     assert.equal(request.headers.authorization, 'Bearer token-1');
   }
   assert.deepEqual(seen[0].body, {
-    id: 'router',
     name: 'router',
     task: 'decision',
     baseUrl: 'http://127.0.0.1:9000',
@@ -1856,29 +1851,29 @@ test('modelkit app model write calls send the explicit bearer token and encoded 
   assert.equal(seen[3].body, undefined);
 });
 
-test('modelkit registerAppModel keeps the status of same-app name conflicts', async () => {
+test('modelkit registerAppModel keeps the status of id conflicts', async () => {
   const sdk = new AgentOSSDK({
-    fetch: createMockFetch(() => jsonResponse({ error: 'name already used by another model of this app' }, 409))
+    fetch: createMockFetch(() => jsonResponse({ error: 'app model id is already in use' }, 409))
   });
 
   await assert.rejects(
-    () => sdk.modelKit.registerAppModel('token-1', { id: 'x', name: 'x' }),
+    () => sdk.modelKit.registerAppModel('token-1', { name: 'x' }),
     (error) => {
       assert.equal(error.name, 'ApiError');
       assert.equal(error.status, 409);
-      assert.deepEqual(error.data, { error: 'name already used by another model of this app' });
+      assert.deepEqual(error.data, { error: 'app model id is already in use' });
       return true;
     }
   );
 });
 
-test('modelkit registerAppModel keeps the status of invalid id grammar', async () => {
+test('modelkit registerAppModel keeps the status of a missing name', async () => {
   const sdk = new AgentOSSDK({
-    fetch: createMockFetch(() => jsonResponse({ error: 'id must match [A-Za-z0-9._-]{1,64}' }, 400))
+    fetch: createMockFetch(() => jsonResponse({ error: 'name is required' }, 400))
   });
 
   await assert.rejects(
-    () => sdk.modelKit.registerAppModel('token-1', { id: 'bad@id', name: 'x' }),
+    () => sdk.modelKit.registerAppModel('token-1', { name: '' }),
     (error) => {
       assert.equal(error.name, 'ApiError');
       assert.equal(error.status, 400);
@@ -1901,7 +1896,7 @@ test('modelkit app model facade uses the registered app token and retries once o
         if (request.headers.authorization === 'Bearer token-v1') {
           return jsonResponse({ error: 'unauthorized' }, 401);
         }
-        return jsonResponse({ success: true, id: 'router' });
+        return jsonResponse({ success: true, id: '6f78dcce6717' });
       }
       return jsonResponse({ success: true });
     })
@@ -1909,18 +1904,18 @@ test('modelkit app model facade uses the registered app token and retries once o
   await sdk.agentos.registerBundle({ bundleId: 'com.demo.app' });
 
   const result = await sdk.modelkit.registerAppModel({
-    request: { id: 'router', name: 'router' }
+    request: { name: 'router' }
   });
 
-  assert.deepEqual(result, { success: true, id: 'router' });
+  assert.deepEqual(result, { success: true, id: '6f78dcce6717' });
   assert.equal(registerCount, 2);
   assert.deepEqual(attempts, ['Bearer token-v1', 'Bearer token-v2']);
 
-  assert.deepEqual(await sdk.modelkit.updateAppModel({ modelId: 'router', request: { name: 'r2' } }), {
+  assert.deepEqual(await sdk.modelkit.updateAppModel({ modelId: '6f78dcce6717', request: { name: 'r2' } }), {
     success: true
   });
-  assert.deepEqual(await sdk.modelkit.toggleAppModel({ modelId: 'router' }), { success: true });
-  assert.deepEqual(await sdk.modelkit.unregisterAppModel({ modelId: 'router' }), { success: true });
+  assert.deepEqual(await sdk.modelkit.toggleAppModel({ modelId: '6f78dcce6717' }), { success: true });
+  assert.deepEqual(await sdk.modelkit.unregisterAppModel({ modelId: '6f78dcce6717' }), { success: true });
 });
 
 test('modelkit app model write calls require registerBundle first', async () => {
@@ -1933,7 +1928,7 @@ test('modelkit app model write calls require registerBundle first', async () => 
   });
 
   await assert.rejects(
-    () => sdk.modelkit.toggleAppModel({ modelId: 'router' }),
+    () => sdk.modelkit.toggleAppModel({ modelId: '6f78dcce6717' }),
     /Bearer token is not set/
   );
   assert.equal(seen.length, 0);

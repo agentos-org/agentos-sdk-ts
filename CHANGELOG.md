@@ -23,15 +23,17 @@
   `isAppModel`. `source` is always set: it is derived from those flags with the
   gateway's rules when the gateway predates `source` or reports an unknown
   value. `appName` is only set when the gateway reports a non-blank one.
-- feat: app models are addressed as `<id>@<bundleId>`. `AppModel.qualifiedId`
-  and `AppModelWriteResult.qualifiedId` carry the full ID to use as the `model`
-  of requests; it matches the model `id` in `listModels()`. `qualifiedId` falls
-  back to `id` against gateways that predate namespaced IDs. The registered `id`
-  stays the app's own local id (1-64 characters from `[A-Za-z0-9._-]`) and is
-  what `updateAppModel` / `unregisterAppModel` / `toggleAppModel` take.
-- behavior: registering an `id` that another app already uses no longer fails
-  with `409`; ids only need to be unique within the app. `409` now means the
-  `name` is already used by another model of the same app.
+- feat: the gateway generates app model IDs. `AppModelRegistration` takes no
+  `id`; the gateway derives a 12-character hashid from the app's bundle ID and
+  the model `name` and returns it as `AppModelWriteResult.id`. Store it: it is
+  the `modelId` of `updateAppModel` / `unregisterAppModel` / `toggleAppModel`
+  (looked up only among the calling app's models, otherwise `404`) and the
+  `model` of requests. `AppModel.id` and `ModelInfo.id` report the same value.
+  A model's `name` is unique within its app: registering an existing `name`
+  replaces that model and keeps its id (`updated: true`), and renaming through
+  `updateAppModel` keeps the id. `409` means the id derived from `name` is still
+  held by a renamed model of the same app, or `updateAppModel` renames a model
+  to a `name` another model of the app already uses.
 - fix: models with `decisions` output are no longer reported as `text` output.
 - feat: add authenticated HarnessKit runtime, thread, run, command, result, and
   resumable event-stream APIs.

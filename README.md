@@ -231,50 +231,55 @@ Apps can register their own models into the gateway. Registered models show up
 in `listModels()` / `listModelsByTask()` with `source: 'app'`,
 `isAppModel: true`, the owning `appBundleId` and its `appName`.
 
-The `id` you register is your own local id (1-64 characters from
-`[A-Za-z0-9._-]`); it only has to be unique within your app. The gateway exposes
-the model as `<id>@<bundleId>` (`qualifiedId`), and that full ID is what appears
-as the model `id` in `listModels()`. Use it as the `model` of requests to reach
-exactly your model, even when another app registered the same local id.
+You do not choose the model id: the gateway generates a 12-character hashid from
+your bundle ID and the model `name` and returns it when you register. That same
+id is the model `id` in `listModels()` and `listAppModels()`. Store it: it
+maintains the model (`updateAppModel` / `toggleAppModel` / `unregisterAppModel`)
+and is the `model` of requests that must reach exactly your model. A `name` is
+unique within your app; different apps may use the same `name` and get
+different ids.
 
 ```ts
 await sdk.agentos.registerBundle({ bundleId: 'com.example.app' });
 
-// Register (or replace) a model. Only `id` and `name` are required.
+// Register (or replace) a model. Only `name` is required.
 const result = await sdk.modelkit.registerAppModel({
   request: {
-    id: 'my-router',
     name: 'my-router',
     task: ModelTask.decision,
     baseUrl: 'http://127.0.0.1:9000',
     apiKey: 'upstream-secret' // stored by the server, never returned
   }
 });
-console.log(result.qualifiedId); // 'my-router@com.example.app': use it as `model` in requests
+const modelId = result.id!; // e.g. '6f78dcce6717': maintain the model with it, or use it as `model` in requests
 console.log(result.updated); // true when an existing model of this app was replaced
 
 // Partial update: unset fields stay unchanged.
 await sdk.modelkit.updateAppModel({
-  modelId: 'my-router',
+  modelId,
   request: { description: 'Routes support tickets' }
 });
 
 // Enable/disable without deleting.
-await sdk.modelkit.toggleAppModel({ modelId: 'my-router' });
+await sdk.modelkit.toggleAppModel({ modelId });
 
 // List every app-registered model (public, no token needed).
 const appModels = await sdk.modelkit.listAppModels();
-console.log(appModels.map((m) => `${m.qualifiedId} disabled=${m.isDisabled}`));
+console.log(appModels.map((m) => `${m.id} disabled=${m.isDisabled}`));
 
-await sdk.modelkit.unregisterAppModel({ modelId: 'my-router' });
+await sdk.modelkit.unregisterAppModel({ modelId });
 ```
 
 Write calls attach the app token automatically and refresh it once on `401`.
 They reject with an `ApiError` carrying the server status: `401` invalid token,
-`403` `appBundleId` mismatch, `404` unknown id (`modelId` is your own local id,
-looked up only among your app's models), `409` the `name` is already used by
-another model of your app, `400` invalid body, unknown `task`, or an `id` /
-bundle ID outside the allowed characters or length.
+`403` `appBundleId` mismatch, `404` unknown id (`modelId` is looked up only among
+your app's models), `409` the id derived from `name` is still held by a renamed
+model of your app (or `updateAppModel` renames a model to a `name` another model
+of your app already uses), `400` invalid body, missing `name`, unknown `task`,
+or a bundle ID outside the allowed characters or length.
+
+Registering a `name` you already registered replaces that model and returns the
+same id; renaming a model with `updateAppModel` keeps its id.
 
 Decision models are normalized by the server: input `text` (+ optional
 `image`), output `decisions`, and `stream` / `tool_call` / `reasoning` all

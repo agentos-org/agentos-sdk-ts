@@ -226,47 +226,51 @@ App 可以把自己的模型注册到网关。注册后的模型会出现在 `li
 `listModelsByTask()` 中，并带有 `source: 'app'`、`isAppModel: true`、所属的
 `appBundleId` 与 `appName`。
 
-注册时传入的 `id` 是 app 自己的本地 id（1-64 个字符，取自 `[A-Za-z0-9._-]`），只需
-在本 app 内唯一。网关对外把模型暴露为 `<id>@<bundleId>`（`qualifiedId`），
-`listModels()` 中的模型 `id` 就是这个完整 ID。请求的 `model` 传这个完整 ID，即使别的
-app 注册了相同的本地 id，也能精准路由到你的模型。
+模型 id 不需要你指定：网关会根据你的 bundle ID 与模型 `name` 生成 12 位 hashid，并在
+注册成功时返回。`listModels()` 与 `listAppModels()` 里的模型 `id` 就是这个值。请保存
+它：维护模型（`updateAppModel` / `toggleAppModel` / `unregisterAppModel`）和请求的
+`model` 都用它来精准指向你的模型。`name` 在你的 app 内唯一；不同 app 可以使用相同的
+`name`，得到的 id 不同。
 
 ```ts
 await sdk.agentos.registerBundle({ bundleId: 'com.example.app' });
 
-// 注册（或替换）模型，只有 `id` 和 `name` 必填。
+// 注册（或替换）模型，只有 `name` 必填。
 const result = await sdk.modelkit.registerAppModel({
   request: {
-    id: 'my-router',
     name: 'my-router',
     task: ModelTask.decision,
     baseUrl: 'http://127.0.0.1:9000',
     apiKey: 'upstream-secret' // 由服务端保存，不会再返回
   }
 });
-console.log(result.qualifiedId); // 'my-router@com.example.app'：请求的 `model` 传它
-console.log(result.updated); // 替换了该 app 已有的同 id 模型时为 true
+const modelId = result.id!; // 例如 '6f78dcce6717'：用它维护模型，或作为请求的 `model`
+console.log(result.updated); // 替换了该 app 已有的同名模型时为 true
 
 // 局部更新：未设置的字段保持不变。
 await sdk.modelkit.updateAppModel({
-  modelId: 'my-router',
+  modelId,
   request: { description: '分流客服工单' }
 });
 
 // 启用/停用，无需删除。
-await sdk.modelkit.toggleAppModel({ modelId: 'my-router' });
+await sdk.modelkit.toggleAppModel({ modelId });
 
 // 列出所有 app 注册的模型（公开接口，无需 token）。
 const appModels = await sdk.modelkit.listAppModels();
-console.log(appModels.map((m) => `${m.qualifiedId} disabled=${m.isDisabled}`));
+console.log(appModels.map((m) => `${m.id} disabled=${m.isDisabled}`));
 
-await sdk.modelkit.unregisterAppModel({ modelId: 'my-router' });
+await sdk.modelkit.unregisterAppModel({ modelId });
 ```
 
 写操作会自动附带 app token，并在 `401` 时刷新一次。失败时 reject 带服务端状态码的
 `ApiError`：`401` token 无效，`403` `appBundleId` 不匹配，`404` id 不存在
-（`modelId` 是你自己的本地 id，只在本 app 的模型中查找），`409` `name` 与本 app 的
-另一个模型重名，`400` 请求体非法、`task` 未知，或 `id` / bundleId 的字符或长度不合法。
+（`modelId` 只在本 app 的模型中查找），`409` 由 `name` 生成的 id 仍被本 app 里一个
+已改名的模型占用（或 `updateAppModel` 把模型改成本 app 另一个模型已用的 `name`），
+`400` 请求体非法、缺少 `name`、`task` 未知，或 bundleId 的字符或长度不合法。
+
+注册已注册过的 `name` 会替换该模型并返回同一个 id；用 `updateAppModel` 改名时 id
+保持不变。
 
 Decision 模型会被服务端规范化：输入为 `text`（可选 `image`），输出为
 `decisions`，`stream` / `tool_call` / `reasoning` 均为 `false`。

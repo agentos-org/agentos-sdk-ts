@@ -71,10 +71,9 @@ void appSource;
 const invalidSource: ModelSource = 'system';
 void invalidSource;
 
-// App models: only `id` and `name` are required to register.
-const registration: AppModelRegistration = { id: 'router', name: 'router' };
+// App models: only `name` is required to register; the gateway generates the id.
+const registration: AppModelRegistration = { name: 'router' };
 const fullRegistration: AppModelRegistration = {
-  id: 'router',
   name: 'router',
   task: 'decision',
   baseUrl: 'http://127.0.0.1:9000',
@@ -88,20 +87,19 @@ void fullRegistration;
 const registered: Promise<AppModelWriteResult> = sdk.modelkit.registerAppModel({ request: registration });
 void registered.then((result) => {
   void result.success;
-  void result.id;
-  const qualified: string | undefined = result.qualifiedId;
-  void qualified;
+  const modelId: string | undefined = result.id;
+  void modelId;
   void result.updated;
 });
-void sdk.modelkit.updateAppModel({ modelId: 'router', request: update });
-void sdk.modelkit.toggleAppModel({ modelId: 'router' });
-void sdk.modelkit.unregisterAppModel({ modelId: 'router' });
+void sdk.modelkit.updateAppModel({ modelId: '6f78dcce6717', request: update });
+void sdk.modelkit.toggleAppModel({ modelId: '6f78dcce6717' });
+void sdk.modelkit.unregisterAppModel({ modelId: '6f78dcce6717' });
 
 const listed: Promise<AppModel[]> = sdk.modelkit.listAppModels();
 void listed.then((models) => {
-  // `qualifiedId` is always populated (falls back to `id`), so it is a plain string.
-  const qualifiedId: string | undefined = models[0]?.qualifiedId;
-  void qualifiedId;
+  // `id` is the gateway-generated hashid: the same value `listModels()` reports.
+  const id: string | undefined = models[0]?.id;
+  void id;
   void models[0]?.appBundleId;
   void models[0]?.hasApiKey;
   void models[0]?.isDisabled;
@@ -113,5 +111,11 @@ const invalidUpdate: AppModelUpdate = {
   appBundleId: 'com.other.app'
 };
 void invalidUpdate;
+const invalidRegistration: AppModelRegistration = {
+  name: 'router',
+  // @ts-expect-error the gateway generates the model id; it is not part of the registration.
+  id: 'router'
+};
+void invalidRegistration;
 // @ts-expect-error AppModel never exposes the API key.
 void ({} as AppModel).apiKey;
