@@ -1647,6 +1647,7 @@ test('modelkit listAppModels is public and normalizes every field', async () => 
         return jsonResponse([
           {
             id: 'app-model-1',
+            qualifiedId: 'app-model-1@com.demo.app',
             name: 'router',
             alias: 'router',
             description: 'routes requests',
@@ -1676,6 +1677,7 @@ test('modelkit listAppModels is public and normalizes every field', async () => 
   assert.equal(seen[0].headers.authorization, undefined);
   assert.deepEqual(models[0], {
     id: 'app-model-1',
+    qualifiedId: 'app-model-1@com.demo.app',
     name: 'router',
     alias: 'router',
     description: 'routes requests',
@@ -1691,6 +1693,8 @@ test('modelkit listAppModels is public and normalizes every field', async () => 
     appBundleId: 'com.demo.app',
     appName: 'Demo'
   });
+  // 旧网关不返回 qualifiedId：回退为裸 id（它就是按裸 id 路由的）。
+  assert.equal(models[1].qualifiedId, 'app-model-2');
   assert.equal(models[1].hasApiKey, false);
   assert.equal(models[1].isDisabled, false);
   assert.equal('baseUrl' in models[1], false);
@@ -1704,7 +1708,7 @@ test('modelkit app model write calls send the explicit bearer token and encoded 
     fetch: createMockFetch((request) => {
       seen.push(request);
       if (request.method === 'POST' && request.pathname === '/modelkit/app-models') {
-        return jsonResponse({ success: true, id: 'router' });
+        return jsonResponse({ success: true, id: 'router', qualifiedId: 'router@com.demo.app' });
       }
       return jsonResponse({ success: true });
     })
@@ -1726,7 +1730,7 @@ test('modelkit app model write calls send the explicit bearer token and encoded 
   await client.toggleAppModel('token-1', 'm1');
   await client.unregisterAppModel('token-1', 'm1');
 
-  assert.deepEqual(registered, { success: true, id: 'router' });
+  assert.deepEqual(registered, { success: true, id: 'router', qualifiedId: 'router@com.demo.app' });
   assert.deepEqual(updated, { success: true });
   assert.deepEqual(
     seen.map((r) => [r.method, r.pathname]),
@@ -1756,9 +1760,9 @@ test('modelkit app model write calls send the explicit bearer token and encoded 
   assert.equal(seen[3].body, undefined);
 });
 
-test('modelkit registerAppModel keeps the status of ownership conflicts', async () => {
+test('modelkit registerAppModel keeps the status of same-app name conflicts', async () => {
   const sdk = new AgentOSSDK({
-    fetch: createMockFetch(() => jsonResponse({ error: 'owned by another app' }, 409))
+    fetch: createMockFetch(() => jsonResponse({ error: 'name already used by another model of this app' }, 409))
   });
 
   await assert.rejects(
@@ -1766,7 +1770,22 @@ test('modelkit registerAppModel keeps the status of ownership conflicts', async 
     (error) => {
       assert.equal(error.name, 'ApiError');
       assert.equal(error.status, 409);
-      assert.deepEqual(error.data, { error: 'owned by another app' });
+      assert.deepEqual(error.data, { error: 'name already used by another model of this app' });
+      return true;
+    }
+  );
+});
+
+test('modelkit registerAppModel keeps the status of invalid id grammar', async () => {
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch(() => jsonResponse({ error: 'id must match [A-Za-z0-9._-]{1,64}' }, 400))
+  });
+
+  await assert.rejects(
+    () => sdk.modelKit.registerAppModel('token-1', { id: 'bad@id', name: 'x' }),
+    (error) => {
+      assert.equal(error.name, 'ApiError');
+      assert.equal(error.status, 400);
       return true;
     }
   );

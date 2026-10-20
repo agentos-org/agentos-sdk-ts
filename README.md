@@ -199,6 +199,12 @@ Apps can register their own models into the gateway. Registered models show up
 in `listModels()` / `listModelsByTask()` with `isAppModel: true` and the owning
 `appBundleId`.
 
+The `id` you register is your own local id (1-64 characters from
+`[A-Za-z0-9._-]`); it only has to be unique within your app. The gateway exposes
+the model as `<id>@<bundleId>` (`qualifiedId`), and that full ID is what appears
+as the model `id` in `listModels()`. Use it as the `model` of requests to reach
+exactly your model, even when another app registered the same local id.
+
 ```ts
 await sdk.agentos.registerBundle({ bundleId: 'com.example.app' });
 
@@ -212,6 +218,7 @@ const result = await sdk.modelkit.registerAppModel({
     apiKey: 'upstream-secret' // stored by the server, never returned
   }
 });
+console.log(result.qualifiedId); // 'my-router@com.example.app': use it as `model` in requests
 console.log(result.updated); // true when an existing model of this app was replaced
 
 // Partial update: unset fields stay unchanged.
@@ -225,15 +232,17 @@ await sdk.modelkit.toggleAppModel({ modelId: 'my-router' });
 
 // List every app-registered model (public, no token needed).
 const appModels = await sdk.modelkit.listAppModels();
-console.log(appModels.map((m) => `${m.id} by ${m.appBundleId} disabled=${m.isDisabled}`));
+console.log(appModels.map((m) => `${m.qualifiedId} disabled=${m.isDisabled}`));
 
 await sdk.modelkit.unregisterAppModel({ modelId: 'my-router' });
 ```
 
 Write calls attach the app token automatically and refresh it once on `401`.
 They reject with an `ApiError` carrying the server status: `401` invalid token,
-`403` not the owning app or `appBundleId` mismatch, `404` unknown id, `409` the
-id belongs to another app, `400` invalid body or unknown `task`.
+`403` `appBundleId` mismatch, `404` unknown id (`modelId` is your own local id,
+looked up only among your app's models), `409` the `name` is already used by
+another model of your app, `400` invalid body, unknown `task`, or an `id` /
+bundle ID outside the allowed characters or length.
 
 Decision models are normalized by the server: input `text` (+ optional
 `image`), output `decisions`, and `stream` / `tool_call` / `reasoning` all

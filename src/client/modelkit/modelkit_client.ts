@@ -181,10 +181,14 @@ export class ModelKitClient {
   /**
    * Registers (or replaces) an app model (`POST /modelkit/app-models`).
    *
-   * Re-registering an id owned by the same app replaces it (`updated: true`).
+   * The model `id` only has to be unique within the calling app; the result
+   * carries `qualifiedId` (`<id>@<bundleId>`), the ID to use as `model` in
+   * requests. Re-registering an id of the same app replaces it (`updated: true`).
+   *
    * Rejects with `ApiError` status 401 (missing/invalid token), 403
-   * (`appBundleId` mismatch), 409 (id owned by another app) or 400 (invalid
-   * body, unknown `task`).
+   * (`appBundleId` mismatch), 409 (the `name` is already used by another model
+   * of the same app) or 400 (invalid body, unknown `task`, or an `id` / bundle
+   * ID outside `[A-Za-z0-9._-]` or over the length limit: 64 / 128).
    */
   registerAppModel(bearerToken: string, request: AppModelRegistration): Promise<AppModelWriteResult> {
     return this.apiClient.request<AppModelWriteResult>('/modelkit/app-models', {
@@ -194,7 +198,11 @@ export class ModelKitClient {
     });
   }
 
-  /** Partially updates an app model owned by the token's app (`PUT /modelkit/app-models/<id>`). */
+  /**
+   * Partially updates an app model owned by the token's app (`PUT /modelkit/app-models/<id>`).
+   * `modelId` is the app's own `id` (not the qualified ID), looked up only among
+   * the calling app's models; an unknown id is a 404.
+   */
   updateAppModel(bearerToken: string, modelId: string, request: AppModelUpdate): Promise<AppModelWriteResult> {
     return this.apiClient.request<AppModelWriteResult>(appModelPath(modelId), {
       method: 'PUT',
@@ -355,8 +363,11 @@ function normalizeModelInfo(item: Record<string, unknown>): ModelInfo {
 
 function normalizeAppModel(item: Record<string, unknown>): AppModel {
   const rawCaps = (item.capabilities as Record<string, unknown> | undefined) ?? {};
+  const id = String(item.id ?? '');
   return {
-    id: String(item.id ?? ''),
+    id,
+    // 旧网关不返回 qualifiedId，此时它按裸 id 路由，所以回退为 id。
+    qualifiedId: String(item.qualifiedId || id),
     name: String(item.name ?? ''),
     alias: String(item.alias ?? ''),
     description: String(item.description ?? ''),

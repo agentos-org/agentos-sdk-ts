@@ -79,6 +79,8 @@ const registered: Promise<AppModelWriteResult> = sdk.modelkit.registerAppModel({
 void registered.then((result) => {
   void result.success;
   void result.id;
+  const qualified: string | undefined = result.qualifiedId;
+  void qualified;
   void result.updated;
 });
 void sdk.modelkit.updateAppModel({ modelId: 'router', request: update });
@@ -87,6 +89,9 @@ void sdk.modelkit.unregisterAppModel({ modelId: 'router' });
 
 const listed: Promise<AppModel[]> = sdk.modelkit.listAppModels();
 void listed.then((models) => {
+  // `qualifiedId` is always populated (falls back to `id`), so it is a plain string.
+  const qualifiedId: string | undefined = models[0]?.qualifiedId;
+  void qualifiedId;
   void models[0]?.appBundleId;
   void models[0]?.hasApiKey;
   void models[0]?.isDisabled;

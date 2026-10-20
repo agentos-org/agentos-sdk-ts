@@ -250,7 +250,20 @@ export interface AppModelCapabilities {
  * The API key is never returned; `hasApiKey` only tells whether one is stored.
  */
 export interface AppModel {
+  /**
+   * The app's own identifier for this model (the `localId` it registered).
+   * Different apps may use the same `id`; address a model in requests with
+   * `qualifiedId`, and use `id` only for `updateAppModel` / `unregisterAppModel`
+   * / `toggleAppModel` on models owned by the calling app.
+   */
   id: string;
+  /**
+   * The full model ID, `<id>@<appBundleId>`: identical to the model's `id` in
+   * `listModels()`. Pass it as the `model` of chat / embedding / ASR / TTS /
+   * decision requests to route to exactly this model. Falls back to `id` for
+   * gateways that predate namespaced model IDs.
+   */
+  qualifiedId: string;
   name: string;
   alias: string;
   description: string;
@@ -277,6 +290,11 @@ export interface AppModel {
  * `text` (+ optional `image`), output `decisions` and no capabilities.
  */
 export interface AppModelRegistration {
+  /**
+   * The model's identifier within this app (its `localId`): 1-64 characters from
+   * `[A-Za-z0-9._-]`. Different apps may use the same value; the gateway exposes
+   * the model as `<id>@<bundleId>` (see `AppModelWriteResult.qualifiedId`).
+   */
   id: string;
   name: string;
   alias?: string;
@@ -307,8 +325,14 @@ export type AppModelUpdate = Partial<Omit<AppModelRegistration, 'id' | 'appBundl
 /** Result of an app-model write call (register / update / unregister / toggle). */
 export interface AppModelWriteResult {
   success: boolean;
-  /** Model id; returned by register only. */
+  /** The app's own model id (`localId`); returned by register only. */
   id?: string;
+  /**
+   * The full model ID (`<id>@<bundleId>`) to use as the `model` of requests;
+   * returned by register only. Store it: it routes to exactly this model.
+   * Absent on gateways that predate namespaced model IDs; use `id` then.
+   */
+  qualifiedId?: string;
   /** `true` when register replaced an existing model of the same app. */
   updated?: boolean;
 }

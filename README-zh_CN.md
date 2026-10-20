@@ -196,6 +196,11 @@ console.log(response.usage?.input_tokens, response.usage?.output_tokens);
 App 可以把自己的模型注册到网关。注册后的模型会出现在 `listModels()` /
 `listModelsByTask()` 中，并带有 `isAppModel: true` 与所属的 `appBundleId`。
 
+注册时传入的 `id` 是 app 自己的本地 id（1-64 个字符，取自 `[A-Za-z0-9._-]`），只需
+在本 app 内唯一。网关对外把模型暴露为 `<id>@<bundleId>`（`qualifiedId`），
+`listModels()` 中的模型 `id` 就是这个完整 ID。请求的 `model` 传这个完整 ID，即使别的
+app 注册了相同的本地 id，也能精准路由到你的模型。
+
 ```ts
 await sdk.agentos.registerBundle({ bundleId: 'com.example.app' });
 
@@ -209,6 +214,7 @@ const result = await sdk.modelkit.registerAppModel({
     apiKey: 'upstream-secret' // 由服务端保存，不会再返回
   }
 });
+console.log(result.qualifiedId); // 'my-router@com.example.app'：请求的 `model` 传它
 console.log(result.updated); // 替换了该 app 已有的同 id 模型时为 true
 
 // 局部更新：未设置的字段保持不变。
@@ -222,14 +228,15 @@ await sdk.modelkit.toggleAppModel({ modelId: 'my-router' });
 
 // 列出所有 app 注册的模型（公开接口，无需 token）。
 const appModels = await sdk.modelkit.listAppModels();
-console.log(appModels.map((m) => `${m.id} by ${m.appBundleId} disabled=${m.isDisabled}`));
+console.log(appModels.map((m) => `${m.qualifiedId} disabled=${m.isDisabled}`));
 
 await sdk.modelkit.unregisterAppModel({ modelId: 'my-router' });
 ```
 
 写操作会自动附带 app token，并在 `401` 时刷新一次。失败时 reject 带服务端状态码的
-`ApiError`：`401` token 无效，`403` 不是所属 app 或 `appBundleId` 不匹配，
-`404` id 不存在，`409` id 属于其他 app，`400` 请求体非法或 `task` 未知。
+`ApiError`：`401` token 无效，`403` `appBundleId` 不匹配，`404` id 不存在
+（`modelId` 是你自己的本地 id，只在本 app 的模型中查找），`409` `name` 与本 app 的
+另一个模型重名，`400` 请求体非法、`task` 未知，或 `id` / bundleId 的字符或长度不合法。
 
 Decision 模型会被服务端规范化：输入为 `text`（可选 `image`），输出为
 `decisions`，`stream` / `tool_call` / `reasoning` 均为 `false`。

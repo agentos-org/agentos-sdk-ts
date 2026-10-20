@@ -2,6 +2,8 @@
 
 ## 2.1.0
 
+- feat: add authenticated HarnessKit runtime, thread, run, command, result, and
+  resumable event-stream APIs.
 - feat: add ModelKit decision inference. `ModelTask.decision`,
   `Modality.decisions` and `sdk.modelkit.decision.create(...)`
   (`POST /modelkit/decision`) with typed `DecisionQuestion` (`choice` / `score`
@@ -14,6 +16,15 @@
   the same methods with an explicit `bearerToken` argument.
 - feat: `ModelInfo` now reports `isAppModel` and `appBundleId` for models
   registered by apps.
+- feat: app models are addressed as `<id>@<bundleId>`. `AppModel.qualifiedId`
+  and `AppModelWriteResult.qualifiedId` carry the full ID to use as the `model`
+  of requests; it matches the model `id` in `listModels()`. `qualifiedId` falls
+  back to `id` against gateways that predate namespaced IDs. The registered `id`
+  stays the app's own local id (1-64 characters from `[A-Za-z0-9._-]`) and is
+  what `updateAppModel` / `unregisterAppModel` / `toggleAppModel` take.
+- behavior: registering an `id` that another app already uses no longer fails
+  with `409`; ids only need to be unique within the app. `409` now means the
+  `name` is already used by another model of the same app.
 - fix: models with `decisions` output are no longer reported as `text` output.
 - feat: add authenticated HarnessKit runtime, thread, run, command, result, and
   resumable event-stream APIs.
