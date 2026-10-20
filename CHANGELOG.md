@@ -1,8 +1,8 @@
 # Changelog
 
-## 3.0.0
+## 2.2.0
 
-- breaking: `AppModelRegistration` no longer accepts an `id`. The gateway
+- feat: `AppModelRegistration` no longer accepts an `id`. The gateway
   generates a 12-character hashid from the app bundle ID and model name and
   returns it as `AppModelWriteResult.id`. Use that ID as the request `model` and
   for `updateAppModel`, `toggleAppModel` and `unregisterAppModel`.
