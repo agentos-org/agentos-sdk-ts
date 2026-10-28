@@ -2,6 +2,9 @@ export interface AgentOSSubscribeOptions {
   autoReconnect?: boolean;
   maxReconnectAttempts?: number;
   reconnectDelay?: number;
+  toolEvents?:
+    | { scope: 'all' }
+    | { scope: 'selected'; toolIds: string[] };
 }
 
 export enum AgentOSSubscribeConnectionStatus {

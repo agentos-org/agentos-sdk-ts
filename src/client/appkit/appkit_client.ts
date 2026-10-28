@@ -11,8 +11,20 @@ export class AppKitClient {
     });
   }
 
-  async subscribe(bearerToken: string, signal?: AbortSignal): Promise<AsyncGenerator<AgentOSEvent>> {
+  async subscribe(
+    bearerToken: string,
+    signal?: AbortSignal,
+    toolEvents?: { scope: 'all' } | { scope: 'selected'; toolIds: string[] }
+  ): Promise<AsyncGenerator<AgentOSEvent>> {
     const response = await this.apiClient.requestStream('/appkit/subscribe', {
+      query: toolEvents
+        ? {
+            toolEvents: toolEvents.scope,
+            ...(toolEvents.scope === 'selected'
+              ? { toolIds: toolEvents.toolIds.join(',') }
+              : {})
+          }
+        : undefined,
       headers: {
         authorization: `Bearer ${bearerToken}`
       },

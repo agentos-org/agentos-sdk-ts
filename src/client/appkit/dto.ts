@@ -74,6 +74,8 @@ export interface Welcome {
 export class AppEventType {
   static readonly toolkitProvisionSucceeded = 'toolkit.provision.succeeded';
   static readonly toolkitProvisionFailed = 'toolkit.provision.failed';
+  static readonly toolkitToolAvailable = 'toolkit.tool.available';
+  static readonly toolkitToolUnavailable = 'toolkit.tool.unavailable';
   static readonly appCommandRequested = 'app.command.requested';
 }
 
@@ -85,6 +87,30 @@ export interface AppEvent<TData = unknown> {
   time: string;
   subject: string;
   data: TData;
+}
+
+export interface ToolLifecycleEventData {
+  id: string;
+  status: 'available' | 'unavailable';
+  reason: string;
+  [key: string]: unknown;
+}
+
+export type ToolAvailableEvent = AppEvent<ToolLifecycleEventData> & {
+  type: typeof AppEventType.toolkitToolAvailable;
+  source: 'toolkit';
+};
+
+export type ToolUnavailableEvent = AppEvent<ToolLifecycleEventData> & {
+  type: typeof AppEventType.toolkitToolUnavailable;
+  source: 'toolkit';
+};
+
+export function isToolLifecycleEvent(
+  event: AppEvent
+): event is ToolAvailableEvent | ToolUnavailableEvent {
+  return event.type === AppEventType.toolkitToolAvailable ||
+    event.type === AppEventType.toolkitToolUnavailable;
 }
 
 export interface OpenToolProvisionFailure {

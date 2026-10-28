@@ -363,7 +363,7 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 | `getRoot()` | none | Fetches AgentOS gateway metadata. |
 | `getReady()` | none | Fetches AgentOS readiness status. |
 | `registerBundle(bundle)` | `AppBundle` | Registers an app bundle with optional `opentoolServers`, stores the bearer token internally, and returns token plus synchronous OpenTool status. |
-| `subscribe(handler, options?)` | `AgentOSEventHandler`, `AgentOSSubscribeOptions` | Subscribes to AppKit SSE events using a handler implementation. |
+| `subscribe(handler, options?)` | `AgentOSEventHandler`, `AgentOSSubscribeOptions` | Subscribes to AppKit SSE events. Set `toolEvents: { scope: 'all' }` or `{ scope: 'selected', toolIds: [...] }` to receive filtered ToolKit lifecycle notifications. |
 | `connectionEvents` | `Subscription<AgentOSSubscribeConnectionEvent>` | Emits AppKit SSE connection status changes. |
 | `connectionStatus` | `AgentOSSubscribeConnectionStatus \| undefined` | Returns the latest known AppKit SSE connection status. |
 
@@ -828,7 +828,7 @@ gateway APIs for tool listing, loading, and calls.
 | Method | Parameters | Description |
 | --- | --- | --- |
 | `onWelcome(welcome)` | `welcome` | Receives `welcome` events. |
-| `onAppEvent(event)` | `AppEvent` | Receives asynchronous `toolkit.provision.succeeded` and `toolkit.provision.failed` notifications. |
+| `onAppEvent(event)` | `AppEvent` | Receives AppKit notifications, including OpenTool provisioning results and subscribed ToolKit availability changes. |
 | `onDone()` | none | Called when the SSE stream ends. |
 | `onError(error)` | `error` | Called when the SSE stream errors. |
 

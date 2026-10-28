@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.0
+
+- feat: let AppKit subscriptions opt into all or selected ToolKit lifecycle
+  events; the selection is retained across automatic reconnects.
+- feat: type ToolKit available and unavailable AppEvents for consumers.
+
 ## 2.2.0
 
 - feat: `AppModelRegistration` no longer accepts an `id`. The gateway

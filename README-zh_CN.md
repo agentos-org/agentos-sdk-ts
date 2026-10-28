@@ -348,7 +348,7 @@ new AgentOSSDK({
 | `getRoot()` | 无 | 获取 AgentOS 网关元信息。 |
 | `getReady()` | 无 | 获取 AgentOS 就绪状态。 |
 | `registerBundle(bundle)` | `AppBundle` | 注册 app bundle，可声明 `opentoolServers`；内部保存 bearer token，并返回 token 与 OpenTool 同步状态。 |
-| `subscribe(handler, options?)` | `AgentOSEventHandler`、`AgentOSSubscribeOptions` | 使用 handler 订阅 AppKit SSE 事件。 |
+| `subscribe(handler, options?)` | `AgentOSEventHandler`、`AgentOSSubscribeOptions` | 订阅 AppKit SSE 事件；设置 `toolEvents: { scope: 'all' }` 或 `{ scope: 'selected', toolIds: [...] }` 可接收对应范围的 ToolKit 生命周期通知。 |
 | `connectionEvents` | `Subscription<AgentOSSubscribeConnectionEvent>` | 监听 AppKit SSE 连接状态变化。 |
 | `connectionStatus` | `AgentOSSubscribeConnectionStatus \| undefined` | 获取最近一次 AppKit SSE 连接状态。 |
 
@@ -800,7 +800,7 @@ OpenTool 语言 SDK；工具列表、定义加载和调用请使用 AgentOS Tool
 | 方法 | 参数 | 说明 |
 | --- | --- | --- |
 | `onWelcome(welcome)` | `welcome` | 接收 `welcome` 事件。 |
-| `onAppEvent(event)` | `AppEvent` | 接收异步的 `toolkit.provision.succeeded` 和 `toolkit.provision.failed` 通知。 |
+| `onAppEvent(event)` | `AppEvent` | 接收 AppKit 通知，包括 OpenTool 拉起结果和已订阅的 ToolKit 可用状态变化。 |
 | `onDone()` | 无 | SSE 流结束时触发。 |
 | `onError(error)` | `error` | SSE 流异常时触发。 |
 

@@ -157,10 +157,14 @@ export class AgentOSSDK {
   agentOsSubscription?: ActiveSubscription;
   agentOsReconnectTask?: Promise<void>;
   agentOsEventHandler?: AgentOSEventHandler;
-  agentOsSubscribeOptions: Required<AgentOSSubscribeOptions> = {
+  agentOsSubscribeOptions: Required<Pick<
+    AgentOSSubscribeOptions,
+    'autoReconnect' | 'maxReconnectAttempts' | 'reconnectDelay'
+  >> & Pick<AgentOSSubscribeOptions, 'toolEvents'> = {
     autoReconnect: true,
     maxReconnectAttempts: 3,
-    reconnectDelay: 1000
+    reconnectDelay: 1000,
+    toolEvents: undefined
   };
   agentOsConnectionStatus?: AgentOSSubscribeConnectionStatus;
   shouldMaintainAgentOsSubscription = false;
@@ -269,7 +273,11 @@ export class AgentOSSDK {
   async openAgentOsSubscription(isReconnect: boolean): Promise<void> {
     const abortController = new AbortController();
     const stream = await this.withAppAuthRetry((bearerToken) =>
-      this.appKit.subscribe(bearerToken, abortController.signal)
+      this.appKit.subscribe(
+        bearerToken,
+        abortController.signal,
+        this.agentOsSubscribeOptions.toolEvents
+      )
     );
     const task = (async () => {
       for await (const event of stream) {
@@ -499,7 +507,12 @@ export class AgentOSModule {
     this.client.agentOsSubscribeOptions = {
       autoReconnect: options.autoReconnect ?? true,
       maxReconnectAttempts: options.maxReconnectAttempts ?? 3,
-      reconnectDelay: options.reconnectDelay ?? 1000
+      reconnectDelay: options.reconnectDelay ?? 1000,
+      toolEvents: options.toolEvents
+        ? options.toolEvents.scope === 'all'
+          ? { scope: 'all' }
+          : { scope: 'selected', toolIds: [...options.toolEvents.toolIds] }
+        : undefined
     };
     this.client.shouldMaintainAgentOsSubscription = true;
     this.client.disposed = false;
