@@ -14,6 +14,8 @@ export * from './client/cronkit/dto';
 export * from './client/cronkit/cronkit_client';
 export * from './client/discoverykit/dto';
 export * from './client/discoverykit/discoverykit_client';
+export * from './client/notifykit/dto';
+export * from './client/notifykit/notifykit_client';
 export * from './client/harnesskit/dto';
 export * from './client/harnesskit/harnesskit_client';
 export * from './client/agentkit/common_dto';

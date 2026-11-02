@@ -36,6 +36,7 @@ import { DiscoveryKitClient } from '../discoverykit/discoverykit_client';
 import { HarnessKitClient } from '../harnesskit/harnesskit_client';
 import { ModelKitClient } from '../modelkit/modelkit_client';
 import { ModelTask, type AppModelRegistration, type AppModelUpdate } from '../modelkit/dto';
+import { NotifyKitClient } from '../notifykit/notifykit_client';
 import { SystemKitClient } from '../systemkit/systemkit_client';
 import { ToolKitClient } from '../toolkit/toolkit_client';
 import { TransferKitClient } from '../transferkit/transferkit_client';
@@ -86,6 +87,10 @@ import type {
   TransferSendRequest,
   TransferSession,
 } from '../transferkit/dto';
+import type {
+  NotifyKitPublishRequest,
+  NotifyKitPublishResponse,
+} from '../notifykit/dto';
 import {
   ApiClient,
   ApiError,
@@ -134,6 +139,7 @@ export class AgentOSSDK {
   readonly discoverykit: DiscoveryKitModule;
   readonly harnesskit: HarnessKitModule;
   readonly modelkit: ModelKitModule;
+  readonly notifykit: NotifyKitModule;
   readonly toolkit: ToolKitModule;
   readonly transferkit: TransferKitModule;
 
@@ -145,6 +151,7 @@ export class AgentOSSDK {
   readonly discoveryKit: DiscoveryKitClient;
   readonly harnessKit: HarnessKitClient;
   readonly modelKit: ModelKitClient;
+  readonly notifyKit: NotifyKitClient;
   readonly toolKit: ToolKitClient;
   readonly transferKit: TransferKitClient;
   readonly appTokens = new Map<string, string>();
@@ -193,6 +200,7 @@ export class AgentOSSDK {
     this.discoveryKit = new DiscoveryKitClient(this.apiClient);
     this.harnessKit = new HarnessKitClient(this.apiClient);
     this.modelKit = new ModelKitClient(this.apiClient);
+    this.notifyKit = new NotifyKitClient(this.apiClient);
     this.toolKit = new ToolKitClient(this.apiClient);
     this.transferKit = new TransferKitClient(this.apiClient);
     this.agentos = new AgentOSModule(this);
@@ -202,6 +210,7 @@ export class AgentOSSDK {
     this.discoverykit = new DiscoveryKitModule(this);
     this.harnesskit = new HarnessKitModule(this);
     this.modelkit = new ModelKitModule(this);
+    this.notifykit = new NotifyKitModule(this);
     this.toolkit = new ToolKitModule(this);
     this.transferkit = new TransferKitModule(this);
   }
@@ -464,10 +473,17 @@ export class AgentOSSDK {
 
   shouldRecoverAppAuth(error: unknown): boolean {
     if (error instanceof ApiError) {
-      if (error.status === 401 || error.status === 403) {
+      if (error.status === 401) {
         return true;
       }
       const text = collectErrorText(error.data).toLowerCase();
+      // HarnessKit uses this 403 for host-only controls, not an expired token.
+      if (text.includes('harness_host_access_forbidden')) {
+        return false;
+      }
+      if (error.status === 403) {
+        return true;
+      }
       return includesAuthError(text);
     }
     const text = collectErrorText(error).toLowerCase();
@@ -968,6 +984,14 @@ export class DiscoveryKitModule {
 
   unregister(): Promise<DiscoveryUnregisterResponse> {
     return this.client.withAppAuthRetry((token) => this.client.discoveryKit.unregister(token));
+  }
+}
+
+export class NotifyKitModule {
+  constructor(private readonly client: AgentOSSDK) {}
+
+  publish(request: NotifyKitPublishRequest): Promise<NotifyKitPublishResponse> {
+    return this.client.withAppAuthRetry((token) => this.client.notifyKit.publish(token, request));
   }
 }
 

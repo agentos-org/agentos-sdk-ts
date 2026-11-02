@@ -351,6 +351,7 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 | `discoverykit` | `DiscoveryKitModule` | DiscoveryKit nearby device discovery with internal token handling. |
 | `harnesskit` | `HarnessKitModule` | Harness runtime and conversation APIs with internal AppKit token handling. |
 | `modelkit` | `ModelKitModule` | ModelKit task-oriented model listing, chat / embedding / asr / tts / decision clients, and app-model registration. |
+| `notifykit` | `NotifyKitModule` | Publishes app notifications with internal AppKit token handling. |
 | `toolkit` | `ToolKitModule` | ToolKit discovery endpoints and tool lifecycle event subscription. |
 | `transferkit` | `TransferKitModule` | TransferKit file transfer endpoints with internal token handling. |
 | `dispose()` | `Promise<void>` | Releases SDK resources and cancels active AppKit subscription. |
@@ -545,6 +546,32 @@ interface AuthKitGrant {
 }
 ```
 
+### NotifyKitModule (`sdk.notifykit`)
+
+NotifyKit lets an app publish user-facing event content to AgentOS. The platform
+sets the category and level, applies rate limits, and folds duplicate events.
+Register the app with `sdk.agentos.registerBundle()` first.
+
+| Method | Parameters | Description |
+| --- | --- | --- |
+| `publish(request)` | `NotifyKitPublishRequest` | Publishes a notification and returns the platform-owned record and aggregate count. |
+
+```ts
+const result = await sdk.notifykit.publish({
+  eventType: 'task.completed',
+  subjectId: 'job-123',
+  title: 'Task complete',
+  message: 'The export is ready.'
+});
+
+console.log(result.notification.id, result.notification.count);
+```
+
+When a user clicks one of the app's notifications in AgentOS Desktop, the app
+receives a `notification.activated` AppKit event. Use
+`isNotificationActivatedEvent(event)` to narrow its payload; `subject` is the
+provided `subjectId`, or the notification ID when no subject was provided.
+
 ### DiscoveryKitModule (`sdk.discoverykit`)
 
 DiscoveryKit discovers nearby AgentOS devices, supporting device-level and
@@ -728,12 +755,14 @@ interface TransferHistoryRecord {
 
 ### HarnessKitModule (`sdk.harnesskit`)
 
-HarnessKit forwards requests through the Gateway to the Harness runtime selected
-for the currently registered AppKit bundle. Register the app with
-`sdk.agentos.registerBundle()` first. An installable process App must be
-configured to receive a Harness runtime; the built-in Harness uses the host's
-default runtime. All methods below use the active AppKit token and retry once
-after an authentication failure.
+HarnessKit forwards requests through the Gateway to one shared host runtime.
+Register the app with `sdk.agentos.registerBundle()` first; every valid AppKit
+token can access the runtime without an app manifest declaration or separate
+HarnessKit registration. The Gateway isolates external apps' threads, runs,
+and events by the authenticated `bundleId`. Every app can read the active
+engine, while only the built-in Harness app can switch it or read the global
+operational snapshot. Methods use the active AppKit token and refresh it once
+when authentication has expired.
 
 | Method | Parameters | Description |
 | --- | --- | --- |
@@ -760,6 +789,11 @@ console.log('Harness engine:', runtime.activeEngine ?? runtime.engine);
 const accepted = await sdk.harnesskit.startRun('research-thread', {
   requestId: crypto.randomUUID(),
   goal: 'Summarize the latest project status',
+  toolPolicy: {
+    allowedToolIds: ['websearch'],
+    deniedToolIds: [],
+    approvalMode: 'onRisk'
+  },
   llmConfig: {
     provider: 'openai-compatible',
     baseUrl: 'http://127.0.0.1:1234/v1',
@@ -776,10 +810,16 @@ for await (const event of events) {
 }
 ```
 
+`toolPolicy` is optional on a run and on `submit_turn` / `edit_and_resend`
+commands. `allowedToolIds: null` or an omitted allow-list leaves tools
+unrestricted; an empty list disables all tools. Deny rules take precedence.
+`approvalMode` accepts `ask`, `onRisk` (the default), or `fullAccess`; the
+legacy `requireApprovalForSideEffects` field is also passed through.
 `HarnessKitCommand` and `HarnessKitRunRequest` keep an open JSON shape so newer
 Harness request fields can pass through. `getOperationalSnapshot()` may return
 HTTP `501` when the configured engine does not expose the optional reader.
-In AgentOS Mobile WebViews, the native bridge must also support `/harnesskit/*`;
+Host-only controls return `403` without triggering an AppKit token refresh. In
+AgentOS Mobile WebViews, the native bridge must also support `/harnesskit/*`;
 unsupported bridge routes are surfaced as `ApiError`.
 
 ### Select a System One Decision Model for Harness
@@ -823,12 +863,17 @@ These subpaths expose OpenTool protocol models and helpers only. Daemon
 management is outside the OpenTool language SDK; use the AgentOS ToolKit
 gateway APIs for tool listing, loading, and calls.
 
+The `Schema` and `OpenToolJsonLoader` exports preserve JSON Schema keywords,
+boolean schemas, and references when parsing and serializing OpenTool files.
+They do not validate schema instances. For Gateway-loaded definitions,
+`sdk.toolkit.loadTool()` also preserves the schema JSON as received.
+
 ### AgentOSEventHandler
 
 | Method | Parameters | Description |
 | --- | --- | --- |
 | `onWelcome(welcome)` | `welcome` | Receives `welcome` events. |
-| `onAppEvent(event)` | `AppEvent` | Receives AppKit notifications, including OpenTool provisioning results and subscribed ToolKit availability changes. |
+| `onAppEvent(event)` | `AppEvent` | Receives AppKit notifications, including OpenTool provisioning, ToolKit availability, and NotifyKit activation events. |
 | `onDone()` | none | Called when the SSE stream ends. |
 | `onError(error)` | `error` | Called when the SSE stream errors. |
 

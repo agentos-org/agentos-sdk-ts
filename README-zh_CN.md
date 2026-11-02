@@ -336,6 +336,7 @@ new AgentOSSDK({
 | `discoverykit` | `DiscoveryKitModule` | DiscoveryKit 附近设备发现接口，内部处理 token。 |
 | `harnesskit` | `HarnessKitModule` | Harness 运行时与会话接口，内部处理 AppKit token。 |
 | `modelkit` | `ModelKitModule` | ModelKit 基于任务的模型列表、chat / embedding / asr / tts / decision 客户端与 app model 注册。 |
+| `notifykit` | `NotifyKitModule` | 发布 App 通知，内部处理 AppKit token。 |
 | `toolkit` | `ToolKitModule` | ToolKit 发现接口与 tool 生命周期事件订阅。 |
 | `transferkit` | `TransferKitModule` | TransferKit 文件传输接口，内部处理 token。 |
 | `dispose()` | `Promise<void>` | 释放 SDK 资源并取消当前 AppKit 订阅。 |
@@ -524,6 +525,29 @@ interface AuthKitGrant {
 }
 ```
 
+### NotifyKitModule（`sdk.notifykit`）
+
+NotifyKit 允许 App 向 AgentOS 发布面向用户的事件内容。通知分类和级别由平台设置，平台也会执行限流并合并重复事件。先调用 `sdk.agentos.registerBundle()` 注册应用。
+
+| 方法 | 参数 | 说明 |
+| --- | --- | --- |
+| `publish(request)` | `NotifyKitPublishRequest` | 发布通知，并返回平台生成的通知记录和累计次数。 |
+
+```ts
+const result = await sdk.notifykit.publish({
+  eventType: 'task.completed',
+  subjectId: 'job-123',
+  title: '任务完成',
+  message: '导出文件已准备好。'
+});
+
+console.log(result.notification.id, result.notification.count);
+```
+
+用户在 AgentOS Desktop 点击该 App 发布的通知时，AppKit 会收到
+`notification.activated` 事件。可用 `isNotificationActivatedEvent(event)` 收窄事件类型；
+`subject` 为 App 提供的 `subjectId`，未提供时则为通知 ID。
+
 ### DiscoveryKitModule（`sdk.discoverykit`）
 
 DiscoveryKit 用于发现附近的 AgentOS 设备，支持设备级和 App 级扫描。
@@ -706,10 +730,11 @@ interface TransferHistoryRecord {
 
 ### HarnessKitModule（`sdk.harnesskit`）
 
-HarnessKit 会通过 Gateway 将请求转发到当前 AppKit bundle 对应的 Harness
-运行时。先调用 `sdk.agentos.registerBundle()` 注册应用。可安装的进程 App
-需要在应用配置中声明 Harness runtime；内置 Harness 使用主机默认运行时。
-以下方法会自动使用当前 AppKit token，并在鉴权失败后刷新 token 重试一次。
+HarnessKit 会通过 Gateway 将请求转发到宿主共享的 Harness runtime。先调用
+`sdk.agentos.registerBundle()` 注册应用；任何有效的 AppKit token 都能访问该 runtime，
+无需在应用配置中声明 HarnessKit 或单独登记。Gateway 按已验证的 `bundleId` 隔离外部
+App 的线程、运行记录和事件。所有 App 都能读取当前引擎；只有内置 Harness App 能切换引擎
+或读取全局运维快照。方法自动使用当前 AppKit token，并在 token 过期时刷新重试一次。
 
 | 方法 | 参数 | 说明 |
 | --- | --- | --- |
@@ -736,6 +761,11 @@ console.log('Harness 引擎：', runtime.activeEngine ?? runtime.engine);
 const accepted = await sdk.harnesskit.startRun('research-thread', {
   requestId: crypto.randomUUID(),
   goal: '总结项目最新状态',
+  toolPolicy: {
+    allowedToolIds: ['websearch'],
+    deniedToolIds: [],
+    approvalMode: 'onRisk'
+  },
   llmConfig: {
     provider: 'openai-compatible',
     baseUrl: 'http://127.0.0.1:1234/v1',
@@ -752,10 +782,13 @@ for await (const event of events) {
 }
 ```
 
-`HarnessKitCommand` 和 `HarnessKitRunRequest` 保留开放的 JSON 字段，方便透传
-后续 Harness 新增字段。如果当前引擎未实现可选的 operational reader，
-`getOperationalSnapshot()` 可能返回 HTTP `501`。
-在 AgentOS Mobile WebView 中，Native bridge 也需要支持 `/harnesskit/*`；
+运行请求以及 `submit_turn` / `edit_and_resend` 命令都可设置可选的 `toolPolicy`。
+省略 `allowedToolIds` 或设为 `null` 表示不限制允许列表；空数组表示禁用所有工具。
+拒绝列表优先。`approvalMode` 支持 `ask`、默认的 `onRisk` 和 `fullAccess`；也会透传旧字段
+`requireApprovalForSideEffects`。`HarnessKitCommand` 和 `HarnessKitRunRequest` 保留开放的
+JSON 字段，方便透传后续 Harness 新增字段。如果当前引擎未实现可选的 operational reader，
+`getOperationalSnapshot()` 可能返回 HTTP `501`。宿主管理接口返回 `403` 时不会触发 AppKit
+token 刷新。在 AgentOS Mobile WebView 中，Native bridge 也需要支持 `/harnesskit/*`；
 未支持的 bridge 路由会以 `ApiError` 暴露。
 
 ### 为 Harness 指定 System One 决策模型
@@ -795,12 +828,16 @@ if (decisionModel) {
 这些子入口只导出 OpenTool 协议模型和辅助能力。daemon 管理不属于
 OpenTool 语言 SDK；工具列表、定义加载和调用请使用 AgentOS ToolKit 网关 API。
 
+`Schema` 和 `OpenToolJsonLoader` 在解析、序列化 OpenTool 文件时会保留完整 JSON Schema
+关键字、布尔 schema 和引用，但不负责验证 schema 实例。通过 Gateway 加载的定义也可使用
+`sdk.toolkit.loadTool()` 原样读取 schema JSON。
+
 ### AgentOSEventHandler
 
 | 方法 | 参数 | 说明 |
 | --- | --- | --- |
 | `onWelcome(welcome)` | `welcome` | 接收 `welcome` 事件。 |
-| `onAppEvent(event)` | `AppEvent` | 接收 AppKit 通知，包括 OpenTool 拉起结果和已订阅的 ToolKit 可用状态变化。 |
+| `onAppEvent(event)` | `AppEvent` | 接收 AppKit 通知，包括 OpenTool 拉起结果、ToolKit 可用状态变化和 NotifyKit 激活事件。 |
 | `onDone()` | 无 | SSE 流结束时触发。 |
 | `onError(error)` | `error` | SSE 流异常时触发。 |
 

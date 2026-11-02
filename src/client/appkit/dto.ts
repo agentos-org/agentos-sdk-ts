@@ -77,6 +77,7 @@ export class AppEventType {
   static readonly toolkitToolAvailable = 'toolkit.tool.available';
   static readonly toolkitToolUnavailable = 'toolkit.tool.unavailable';
   static readonly appCommandRequested = 'app.command.requested';
+  static readonly notificationActivated = 'notification.activated';
 }
 
 export interface AppEvent<TData = unknown> {
@@ -94,6 +95,23 @@ export interface ToolLifecycleEventData {
   status: 'available' | 'unavailable';
   reason: string;
   [key: string]: unknown;
+}
+
+export interface NotificationActivatedEventData {
+  notificationId: string;
+  eventType: string;
+  subjectId?: string;
+}
+
+export type NotificationActivatedEvent = AppEvent<NotificationActivatedEventData> & {
+  type: typeof AppEventType.notificationActivated;
+  source: 'notifykit';
+};
+
+export function isNotificationActivatedEvent(
+  event: AppEvent
+): event is NotificationActivatedEvent {
+  return event.type === AppEventType.notificationActivated && event.source === 'notifykit';
 }
 
 export type ToolAvailableEvent = AppEvent<ToolLifecycleEventData> & {

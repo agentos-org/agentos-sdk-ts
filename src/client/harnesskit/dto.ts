@@ -79,12 +79,31 @@ export interface HarnessKitDecisionModelConfig {
   directCallConfidence?: number;
 }
 
+export type HarnessKitToolApprovalMode =
+  | 'ask'
+  | 'onRisk'
+  | 'fullAccess'
+  | 'systemOne'
+  | (string & {});
+
+/** Tool visibility and approval rules for one run or turn. */
+export interface HarnessKitToolPolicy {
+  /** `null` leaves the tool set unrestricted; an empty list allows no tools. */
+  allowedToolIds?: string[] | null;
+  /** Denied tools remain unavailable even when they appear in `allowedToolIds`. */
+  deniedToolIds?: string[];
+  approvalMode?: HarnessKitToolApprovalMode;
+  /** Legacy compatibility field; `approvalMode` takes precedence when both are set. */
+  requireApprovalForSideEffects?: boolean;
+}
+
 /** Request payload accepted by POST /v1/threads/{threadId}/runs. */
 export interface HarnessKitRunRequest {
   requestId: string;
   goal: string;
   llmConfig: HarnessKitLlmConfig;
   decisionModelConfig?: HarnessKitDecisionModelConfig | null;
+  toolPolicy?: HarnessKitToolPolicy | null;
   actorId?: string;
   messages?: HarnessKitThreadMessage[];
   context?: HarnessKitJsonObject;
@@ -105,6 +124,8 @@ export interface HarnessKitCommand {
   threadId?: string;
   /** Supported by submit_turn and edit_and_resend commands. */
   decisionModelConfigOverride?: HarnessKitDecisionModelConfig | null;
+  /** Per-turn tool policy supported by submit_turn and edit/resend commands. */
+  toolPolicy?: HarnessKitToolPolicy | null;
   [key: string]: unknown;
 }
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.0
+
+- feat: expose typed HarnessKit tool policies for runs and supported commands.
+- feat: add NotifyKit notification publishing and typed activation events.
+- fix: preserve complete JSON Schema documents, including boolean schemas and
+  references, in the Node OpenTool parser and loader.
+- fix: do not refresh AppKit credentials for HarnessKit host-only access denials.
+
 ## 2.3.0
 
 - feat: let AppKit subscriptions opt into all or selected ToolKit lifecycle
