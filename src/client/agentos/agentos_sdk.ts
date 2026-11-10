@@ -67,15 +67,23 @@ import type {
   HarnessKitEngineId,
   HarnessKitEngineSwitchResult,
   HarnessKitEvent,
+  HarnessKitForkThreadRequest,
   HarnessKitOperationalSnapshot,
   HarnessKitEventsOptions,
   HarnessKitRunAccepted,
   HarnessKitRunRequest,
   HarnessKitRunResult,
+  HarnessKitSkill,
+  HarnessKitSkillSettings,
+  HarnessKitSkillSettingsUpdate,
   HarnessKitRuntimeInfo,
   HarnessKitThreadDeleteResult,
   HarnessKitThreadRenameResult,
-  HarnessKitThreadSnapshot
+  HarnessKitThreadSnapshot,
+  HarnessKitWorkspace,
+  HarnessKitWorkspaceCreate,
+  HarnessKitWorkspaceUpdate,
+  HarnessKitWorkspaceValidation
 } from '../harnesskit/dto';
 import type {
   HistoryQuery,
@@ -1012,6 +1020,45 @@ export class HarnessKitModule {
 
   listThreads(): Promise<HarnessKitThreadSnapshot[]> {
     return this.client.withAppAuthRetry((token) => this.client.harnessKit.listThreads(token));
+  }
+
+  forkThread(request: HarnessKitForkThreadRequest): Promise<HarnessKitThreadSnapshot> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.forkThread(token, request));
+  }
+
+  listSkills(): Promise<HarnessKitSkill[]> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.listSkills(token));
+  }
+
+  /** Host-only: inspect the device's skill library configuration. */
+  getSkillSettings(): Promise<HarnessKitSkillSettings> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.getSkillSettings(token));
+  }
+
+  /** Host-only: replace the device's skill library configuration. */
+  updateSkillSettings(settings: HarnessKitSkillSettingsUpdate): Promise<HarnessKitSkillSettings> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.updateSkillSettings(token, settings));
+  }
+
+  /** Workspace management is restricted to the built-in Harness app. */
+  listWorkspaces(includeArchived = false): Promise<HarnessKitWorkspace[]> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.listWorkspaces(token, includeArchived));
+  }
+
+  createWorkspace(workspace: HarnessKitWorkspaceCreate): Promise<HarnessKitWorkspace> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.createWorkspace(token, workspace));
+  }
+
+  updateWorkspace(workspaceId: string, changes: HarnessKitWorkspaceUpdate): Promise<HarnessKitWorkspace> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.updateWorkspace(token, workspaceId, changes));
+  }
+
+  relinkWorkspace(workspaceId: string, rootPath: string): Promise<HarnessKitWorkspace> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.relinkWorkspace(token, workspaceId, rootPath));
+  }
+
+  validateWorkspace(workspaceId: string): Promise<HarnessKitWorkspaceValidation> {
+    return this.client.withAppAuthRetry((token) => this.client.harnessKit.validateWorkspace(token, workspaceId));
   }
 
   getThread(threadId: string): Promise<HarnessKitThreadSnapshot> {

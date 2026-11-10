@@ -5,15 +5,23 @@ import type {
   HarnessKitEngineId,
   HarnessKitEngineSwitchResult,
   HarnessKitEvent,
+  HarnessKitForkThreadRequest,
   HarnessKitOperationalSnapshot,
   HarnessKitRunAccepted,
   HarnessKitRunRequest,
   HarnessKitRunResult,
+  HarnessKitSkill,
+  HarnessKitSkillSettings,
+  HarnessKitSkillSettingsUpdate,
   HarnessKitRuntimeInfo,
   HarnessKitThreadDeleteResult,
   HarnessKitThreadRenameResult,
   HarnessKitThreadSnapshot,
-  HarnessKitEventsOptions
+  HarnessKitEventsOptions,
+  HarnessKitWorkspace,
+  HarnessKitWorkspaceCreate,
+  HarnessKitWorkspaceUpdate,
+  HarnessKitWorkspaceValidation
 } from './dto';
 
 export class HarnessKitClient {
@@ -43,6 +51,70 @@ export class HarnessKitClient {
       '/v1/threads'
     );
     return Array.isArray(response.threads) ? response.threads : [];
+  }
+
+  forkThread(
+    bearerToken: string,
+    request: HarnessKitForkThreadRequest
+  ): Promise<HarnessKitThreadSnapshot> {
+    return this.request(bearerToken, '/v1/threads', { method: 'POST', data: request });
+  }
+
+  async listSkills(bearerToken: string): Promise<HarnessKitSkill[]> {
+    const response = await this.request<{ skills?: HarnessKitSkill[] }>(bearerToken, '/v1/skills');
+    return Array.isArray(response.skills) ? response.skills : [];
+  }
+
+  /** Host-only: inspect the device's skill library configuration. */
+  getSkillSettings(bearerToken: string): Promise<HarnessKitSkillSettings> {
+    return this.request(bearerToken, '/admin/api/harness/skills');
+  }
+
+  /** Host-only: replace the device's skill library configuration. */
+  updateSkillSettings(
+    bearerToken: string,
+    settings: HarnessKitSkillSettingsUpdate
+  ): Promise<HarnessKitSkillSettings> {
+    return this.request(bearerToken, '/admin/api/harness/skills', { method: 'PUT', data: settings });
+  }
+
+  /** Workspace management is restricted to the built-in Harness app. */
+  async listWorkspaces(bearerToken: string, includeArchived = false): Promise<HarnessKitWorkspace[]> {
+    const response = await this.request<{ workspaces?: HarnessKitWorkspace[] }>(bearerToken, '/v1/workspaces', {
+      query: includeArchived ? { includeArchived: true } : undefined
+    });
+    return Array.isArray(response.workspaces) ? response.workspaces : [];
+  }
+
+  async createWorkspace(bearerToken: string, workspace: HarnessKitWorkspaceCreate): Promise<HarnessKitWorkspace> {
+    const response = await this.request<{ workspace: HarnessKitWorkspace }>(bearerToken, '/v1/workspaces', {
+      method: 'POST', data: workspace
+    });
+    return response.workspace;
+  }
+
+  async updateWorkspace(
+    bearerToken: string, workspaceId: string, changes: HarnessKitWorkspaceUpdate
+  ): Promise<HarnessKitWorkspace> {
+    const response = await this.request<{ workspace: HarnessKitWorkspace }>(
+      bearerToken, `/v1/workspaces/${encodeURIComponent(workspaceId)}`, { method: 'PATCH', data: changes }
+    );
+    return response.workspace;
+  }
+
+  async relinkWorkspace(bearerToken: string, workspaceId: string, rootPath: string): Promise<HarnessKitWorkspace> {
+    const response = await this.request<{ workspace: HarnessKitWorkspace }>(
+      bearerToken, `/v1/workspaces/${encodeURIComponent(workspaceId)}/relink`, {
+        method: 'POST', data: { rootPath }
+      }
+    );
+    return response.workspace;
+  }
+
+  validateWorkspace(bearerToken: string, workspaceId: string): Promise<HarnessKitWorkspaceValidation> {
+    return this.request(bearerToken, `/v1/workspaces/${encodeURIComponent(workspaceId)}/validate`, {
+      method: 'POST'
+    });
   }
 
   getThread(

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.0
+
+- feat(harnesskit): expose skill selection, skill catalog and host settings,
+  thread forking, workspace operations, and run activity types.
+- fix(harnesskit): align decision-model options with current Harness; mark
+  the legacy direct-call threshold as deprecated.
+- feat(harnesskit): expose subagent model-selection events with a type guard.
+
 ## 2.4.0
 
 - feat: expose typed HarnessKit tool policies for runs and supported commands.

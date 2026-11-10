@@ -1,6 +1,6 @@
 {
   "name": "agentos-sdk-ts",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "TypeScript SDK for AgentOS APIs and clients.",
   "license": "MIT",
   "repository": {
@@ -37,12 +37,13 @@
     "dist",
     "src",
     "README.md",
-    "README-zh_CN.md"
+    "README-zh_CN.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "rollup -c --forceExit",
+    "build": "rollup -c --forceExit && node scripts/fix-declarations.mjs",
     "clean": "rm -rf dist",
-    "test": "npm run build && node --test ./test/sdk.test.mjs",
+    "test": "npm run build && node --test ./test/*.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "lint": "eslint \"src/**/*.ts\" \"test/typecheck/**/*.ts\"",
     "verify": "npm run typecheck && npm run lint && npm test",

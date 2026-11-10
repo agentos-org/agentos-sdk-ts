@@ -761,14 +761,20 @@ token can access the runtime without an app manifest declaration or separate
 HarnessKit registration. The Gateway isolates external apps' threads, runs,
 and events by the authenticated `bundleId`. Every app can read the active
 engine, while only the built-in Harness app can switch it or read the global
-operational snapshot. Methods use the active AppKit token and refresh it once
-when authentication has expired.
+operational snapshot, manage host workspaces or change the host skill library.
+External apps can discover skills and fork their own threads. Methods use the
+active AppKit token and refresh it once when authentication has expired.
 
 | Method | Parameters | Description |
 | --- | --- | --- |
 | `health()` | none | Checks Harness runtime health through the authenticated Gateway route. |
 | `getRuntime()` / `switchEngine(engine)` | `engine` | Reads the runtime engine or requests an engine switch. |
 | `listThreads()` / `getThread(threadId)` | `threadId` | Lists durable threads or reads one thread snapshot. |
+| `forkThread(request)` | `HarnessKitForkThreadRequest` | Forks an app-owned thread through an assistant turn. |
+| `listSkills()` | none | Lists the available skill catalog. |
+| `getSkillSettings()` / `updateSkillSettings(settings)` | `HarnessKitSkillSettingsUpdate` | Reads or replaces the host skill library configuration (built-in Harness only). |
+| `listWorkspaces()` / `createWorkspace()` / `updateWorkspace()` | workspace ID and settings | Lists and manages device workspaces (built-in Harness only). |
+| `relinkWorkspace()` / `validateWorkspace()` | workspace ID, path | Relinks or validates a device workspace (built-in Harness only). |
 | `renameThread(threadId, title)` / `deleteThread(threadId)` | `threadId`, `title` | Updates a thread title or deletes an idle thread. |
 | `startRun(threadId, request)` | `threadId`, `HarnessKitRunRequest` | Starts a Harness run and returns its `runId`. |
 | `submitCommand(threadId, command)` | `threadId`, `HarnessKitCommand` | Submits work or control commands; rejected commands return their receipt. |
@@ -789,6 +795,7 @@ console.log('Harness engine:', runtime.activeEngine ?? runtime.engine);
 const accepted = await sdk.harnesskit.startRun('research-thread', {
   requestId: crypto.randomUUID(),
   goal: 'Summarize the latest project status',
+  skillSelection: { required: [{ skillId: 'harness.research' }], autoSelect: true },
   toolPolicy: {
     allowedToolIds: ['websearch'],
     deniedToolIds: [],
@@ -828,7 +835,9 @@ Harness can use a ModelKit `decision` model for complexity checks and tool
 selection. Select it by its ModelKit `id`; the host resolves its provider
 credentials and endpoint. Set `decisionModelConfig` on a run request, or use
 `decisionModelConfigOverride` on a `submit_turn` or `edit_and_resend` command.
-The confidence threshold defaults to `0.75`.
+`toolSelectionEnabled` controls decision-model tool ranking and defaults to `true`.
+Set `contextWindowSize` when the model catalog provides it. The legacy
+`directCallConfidence` field is deprecated and ignored by current Harness versions.
 
 ```ts
 const decisionModels = await sdk.modelkit.listModelsByTask('decision');
@@ -841,7 +850,8 @@ if (decisionModel) {
     input: 'Continue the research and choose the relevant tools.',
     decisionModelConfigOverride: {
       modelId: decisionModel.id,
-      directCallConfidence: 0.75
+      toolSelectionEnabled: true,
+      contextWindowSize: decisionModel.contextWindowSize
     }
   });
 }
@@ -849,7 +859,11 @@ if (decisionModel) {
 
 For `startRun`, pass the same config as `decisionModelConfig` in
 `HarnessKitRunRequest`. Omitting either field leaves decision-model selection
-to the Harness default behavior.
+to the Harness default behavior. Skill selection and policy are available as
+`skillSelection` and `skillPolicy` on run requests and commands. A `model.selected`
+event with `data.subagent === true` includes the selected model and reason; use
+`isHarnessKitSubagentModelSelectedEvent(event)` for a typed check. The Gateway
+must be updated for scoped forking and host-only workspace restrictions.
 
 ### OpenTool Exports
 

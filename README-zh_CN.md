@@ -734,13 +734,19 @@ HarnessKit 会通过 Gateway 将请求转发到宿主共享的 Harness runtime�
 `sdk.agentos.registerBundle()` 注册应用；任何有效的 AppKit token 都能访问该 runtime，
 无需在应用配置中声明 HarnessKit 或单独登记。Gateway 按已验证的 `bundleId` 隔离外部
 App 的线程、运行记录和事件。所有 App 都能读取当前引擎；只有内置 Harness App 能切换引擎
-或读取全局运维快照。方法自动使用当前 AppKit token，并在 token 过期时刷新重试一次。
+读取全局运维快照、管理宿主工作区或修改宿主技能库。外部 App 可以发现技能并分支自己的会话。
+方法自动使用当前 AppKit token，并在 token 过期时刷新重试一次。
 
 | 方法 | 参数 | 说明 |
 | --- | --- | --- |
 | `health()` | 无 | 通过需要鉴权的 Gateway 路由检查 Harness 运行时健康状态。 |
 | `getRuntime()` / `switchEngine(engine)` | `engine` | 读取运行时引擎信息或请求切换引擎。 |
 | `listThreads()` / `getThread(threadId)` | `threadId` | 列出持久化线程或读取单个线程快照。 |
+| `forkThread(request)` | `HarnessKitForkThreadRequest` | 从本应用会话的指定助手消息创建分支。 |
+| `listSkills()` | 无 | 获取可用技能目录。 |
+| `getSkillSettings()` / `updateSkillSettings(settings)` | `HarnessKitSkillSettingsUpdate` | 读取或替换宿主技能库配置（仅内置 Harness）。 |
+| `listWorkspaces()` / `createWorkspace()` / `updateWorkspace()` | 工作区 ID、配置 | 查看和管理设备工作区（仅内置 Harness）。 |
+| `relinkWorkspace()` / `validateWorkspace()` | 工作区 ID、路径 | 重新关联或验证设备工作区（仅内置 Harness）。 |
 | `renameThread(threadId, title)` / `deleteThread(threadId)` | `threadId`、`title` | 修改线程标题或删除空闲线程。 |
 | `startRun(threadId, request)` | `threadId`、`HarnessKitRunRequest` | 启动 Harness Run 并返回 `runId`。 |
 | `submitCommand(threadId, command)` | `threadId`、`HarnessKitCommand` | 提交工作或控制命令；被拒绝的命令仍返回 receipt。 |
@@ -761,6 +767,7 @@ console.log('Harness 引擎：', runtime.activeEngine ?? runtime.engine);
 const accepted = await sdk.harnesskit.startRun('research-thread', {
   requestId: crypto.randomUUID(),
   goal: '总结项目最新状态',
+  skillSelection: { required: [{ skillId: 'harness.research' }], autoSelect: true },
   toolPolicy: {
     allowedToolIds: ['websearch'],
     deniedToolIds: [],
@@ -796,7 +803,9 @@ token 刷新。在 AgentOS Mobile WebView 中，Native bridge 也需要支持 `/
 Harness 可以使用 ModelKit 的 `decision` 模型进行复杂度判断和工具选择。
 使用 ModelKit 模型的 `id` 指定；模型凭据和服务端点由宿主管理。启动 Run 时，
 在请求中设置 `decisionModelConfig`；提交 `submit_turn` 或 `edit_and_resend`
-命令时，设置 `decisionModelConfigOverride`。直接调用置信度阈值默认为 `0.75`。
+命令时，设置 `decisionModelConfigOverride`。`toolSelectionEnabled` 控制决策模型的工具排序，
+默认开启；模型目录提供上下文窗口时，可设置 `contextWindowSize`。旧字段
+`directCallConfidence` 已弃用，当前 Harness 不再使用。
 
 ```ts
 const decisionModels = await sdk.modelkit.listModelsByTask('decision');
@@ -809,14 +818,19 @@ if (decisionModel) {
     input: '继续研究并选择合适的工具。',
     decisionModelConfigOverride: {
       modelId: decisionModel.id,
-      directCallConfidence: 0.75
+      toolSelectionEnabled: true,
+      contextWindowSize: decisionModel.contextWindowSize
     }
   });
 }
 ```
 
 通过 `startRun` 启动时，在 `HarnessKitRunRequest` 中使用相同配置字段
-`decisionModelConfig`。省略字段时，Harness 会按默认行为选择决策方式。
+`decisionModelConfig`。省略字段时，Harness 会按默认行为选择决策方式。Run 请求和命令
+可通过 `skillSelection` 与 `skillPolicy` 指定技能；`model.selected` 事件中的
+`data.subagent === true` 表示子任务的模型选择，包含模型及选择理由，可用
+`isHarnessKitSubagentModelSelectedEvent(event)` 做类型判断。会话分支的隔离和宿主工作区
+权限限制需要配合更新后的 Gateway 使用。
 
 ### OpenTool 导出
 
