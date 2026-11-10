@@ -185,16 +185,17 @@ so fall back to `appBundleId`). Against gateways that predate `source`, or when
 it holds an unknown value, `source` is derived from the legacy flags with the
 gateway's rules.
 
-`ModelInfo` also reports `contextWindowSize` and `maxOutputTokens` (the maximum
-number of tokens the model can generate in one response) when the gateway knows
-them, and leaves them `undefined` otherwise. Only chat models report
-`maxOutputTokens` (embedding, ASR, TTS and decision models do not generate
-text, so it is `undefined` for them); a chat model that reports
-`contextWindowSize` reports `maxOutputTokens` too, using the same number when it
-has no value of its own. Apps can set both when registering
-a model (`registerAppModel({ request: { name, contextWindowSize: 32768,
-maxOutputTokens: 4096 } })`); `AppModel` reports them back, and `updateAppModel`
-can change them.
+`ModelInfo` can report `contextWindowSize` and `maxOutputTokens` (the maximum
+number of tokens generated in one response). Both are optional: the SDK reads
+the gateway's values and does not synthesize a missing `maxOutputTokens`. The
+current gateway reports this limit for chat models, not embedding, ASR, TTS or
+decision models. When a chat model has a known `contextWindowSize` but no
+separate output limit, the current gateway uses the context window as the output
+limit. Older gateways may omit `maxOutputTokens` even when they report a context
+window. Apps can set both fields in `AppModelRegistration` when registering a
+model (`registerAppModel({ request: { name, contextWindowSize: 32768,
+maxOutputTokens: 4096 } })`); `AppModel` returns them when provided, and
+`AppModelUpdate` can change them.
 
 ### Use ModelKit Decision
 
@@ -378,6 +379,11 @@ Use `baseUrl`, `connectTimeout`, and `receiveTimeout` for public configuration.
 | `subscribe(handler, options?)` | `AgentOSEventHandler`, `AgentOSSubscribeOptions` | Subscribes to AppKit SSE events. Set `toolEvents: { scope: 'all' }` or `{ scope: 'selected', toolIds: [...] }` to receive filtered ToolKit lifecycle notifications. |
 | `connectionEvents` | `Subscription<AgentOSSubscribeConnectionEvent>` | Emits AppKit SSE connection status changes. |
 | `connectionStatus` | `AgentOSSubscribeConnectionStatus \| undefined` | Returns the latest known AppKit SSE connection status. |
+
+Tool event selection is retained across automatic reconnects. The
+`toolkit.tool.available` and `toolkit.tool.unavailable` AppEvents carry
+`data.id`, `data.status` and `data.reason`; `isToolLifecycleEvent(event)` narrows
+them to `ToolAvailableEvent | ToolUnavailableEvent`.
 
 ### CronKitModule (`sdk.cronkit`)
 
@@ -578,10 +584,17 @@ const result = await sdk.notifykit.publish({
 console.log(result.notification.id, result.notification.count);
 ```
 
+`NotifyKitPublishRequest` requires a lowercase dotted `eventType`, `title` and
+`message`; `subjectId` is optional. The response contains `accepted: true` and a
+`notification` with `id`, `source`, `sourceType`, `eventType`, `category`,
+`title`, `message`, `level`, `createdAt`, `updatedAt`, `count`, and optional
+`subjectId`. `level` is `info`, `success`, `warning` or `error`.
+
 When a user clicks one of the app's notifications in AgentOS Desktop, the app
 receives a `notification.activated` AppKit event. Use
 `isNotificationActivatedEvent(event)` to narrow its payload; `subject` is the
-provided `subjectId`, or the notification ID when no subject was provided.
+provided `subjectId`, or the notification ID when no subject was provided. The
+event's `data` contains `notificationId`, `eventType` and optional `subjectId`.
 
 ### DiscoveryKitModule (`sdk.discoverykit`)
 
@@ -784,8 +797,8 @@ active AppKit token and refresh it once when authentication has expired.
 | `forkThread(request)` | `HarnessKitForkThreadRequest` | Forks an app-owned thread through an assistant turn. |
 | `listSkills()` | none | Lists the available skill catalog. |
 | `getSkillSettings()` / `updateSkillSettings(settings)` | `HarnessKitSkillSettingsUpdate` | Reads or replaces the host skill library configuration (built-in Harness only). |
-| `listWorkspaces()` / `createWorkspace()` / `updateWorkspace()` | workspace ID and settings | Lists and manages device workspaces (built-in Harness only). |
-| `relinkWorkspace()` / `validateWorkspace()` | workspace ID, path | Relinks or validates a device workspace (built-in Harness only). |
+| `listWorkspaces(includeArchived?)` / `createWorkspace(workspace)` / `updateWorkspace(workspaceId, changes)` | `includeArchived`, workspace ID and settings | Lists and manages device workspaces (built-in Harness only). |
+| `relinkWorkspace(workspaceId, rootPath)` / `validateWorkspace(workspaceId)` | workspace ID, path | Relinks or validates a device workspace (built-in Harness only). |
 | `renameThread(threadId, title)` / `deleteThread(threadId)` | `threadId`, `title` | Updates a thread title or deletes an idle thread. |
 | `startRun(threadId, request)` | `threadId`, `HarnessKitRunRequest` | Starts a Harness run and returns its `runId`. |
 | `submitCommand(threadId, command)` | `threadId`, `HarnessKitCommand` | Submits work or control commands; rejected commands return their receipt. |
@@ -831,14 +844,15 @@ for await (const event of events) {
 `toolPolicy` is optional on a run and on `submit_turn` / `edit_and_resend`
 commands. `allowedToolIds: null` or an omitted allow-list leaves tools
 unrestricted; an empty list disables all tools. Deny rules take precedence.
-`approvalMode` accepts `ask`, `onRisk` (the default), or `fullAccess`; the
-legacy `requireApprovalForSideEffects` field is also passed through.
+`approvalMode` accepts `ask`, `onRisk` (the default), `fullAccess`, `systemOne`,
+and host-defined strings. The legacy `requireApprovalForSideEffects` field is
+also passed through; `approvalMode` takes precedence when both are supplied.
 `HarnessKitCommand` and `HarnessKitRunRequest` keep an open JSON shape so newer
 Harness request fields can pass through. `getOperationalSnapshot()` may return
 HTTP `501` when the configured engine does not expose the optional reader.
-Host-only controls return `403` without triggering an AppKit token refresh. In
-AgentOS Mobile WebViews, the native bridge must also support `/harnesskit/*`;
-unsupported bridge routes are surfaced as `ApiError`.
+A `harness_host_access_forbidden` host-only denial does not trigger an AppKit
+token refresh. In AgentOS Mobile WebViews, the native bridge must also support
+`/harnesskit/*`; unsupported bridge routes are surfaced as `ApiError`.
 
 ### Select a System One Decision Model for Harness
 
@@ -871,10 +885,67 @@ if (decisionModel) {
 For `startRun`, pass the same config as `decisionModelConfig` in
 `HarnessKitRunRequest`. Omitting either field leaves decision-model selection
 to the Harness default behavior. Skill selection and policy are available as
-`skillSelection` and `skillPolicy` on run requests and commands. A `model.selected`
-event with `data.subagent === true` includes the selected model and reason; use
-`isHarnessKitSubagentModelSelectedEvent(event)` for a typed check. The Gateway
+`skillSelection` and `skillPolicy` on run requests and commands. The Gateway
 must be updated for scoped forking and host-only workspace restrictions.
+
+### HarnessKit request and result fields
+
+`forkThread()` takes four required fields: `sourceThreadId`, the new `threadId`,
+`throughTurnId` (the assistant turn to fork through), and `title`.
+`listSkills()` returns `HarnessKitSkill` entries with `skillId`, `name`,
+`description` and `version`, plus optional `enabled`, `source`, `builtin`,
+`requiredToolIds` and `missingToolIds`.
+`updateSkillSettings()` replaces all three required fields: `roots`,
+`disabledSkillIds` and `automatic`; `getSkillSettings()` also returns `skills`
+and may report `catalogError` or `unavailableRoots`.
+
+`createWorkspace()` requires `folderPaths` and accepts an optional `name`.
+`updateWorkspace()` accepts `name`, `folderPaths` and `archived`;
+`listWorkspaces(true)` includes archived workspaces. Workspace results include
+`workspaceId`, `name`, `revision`, `createdAt` and `updatedAt`, with optional
+`rootPath`, `folderPaths` and `archivedAt`. `validateWorkspace()` returns
+`valid`, `workspaceId`, `instructionFiles` and optional `rootPath` and
+`folderPaths`. All workspace-management and host skill settings methods are
+restricted to the built-in Harness app.
+
+Both `HarnessKitRunRequest` and `HarnessKitCommand` accept `workspaceId`,
+`skillSelection` and `skillPolicy`. The selection supports `required` and
+`preferred` arrays of `{ skillId, version? }`, `excludedSkillIds`, `autoSelect`,
+`maxActiveSkills` and `maxInstructionTokens`. The policy supports
+`allowedTrustLevels` (`trusted`, `verified`, `untrusted`), `allowedSkillIds`,
+`deniedSkillIds`, `allowAutomaticSelection`, `defaultMaxActiveSkills` and
+`defaultMaxInstructionTokens`.
+
+`HarnessKitCommand` also types `actorId`, `input`, `inputContentParts`,
+`llmConfigOverride`, `expectedRevision`, `expectedBindingVersion`, `queueMode`
+(`append`, `insertNext`, `steer`, `draft`, or a host-defined string), and the
+`runId`, `turnId`, `targetRunId` and `targetTurnId` targeting fields.
+`HarnessKitLlmConfig.providerOptions.subagentModels` accepts model profiles with
+required `id`, `source` (`agentos`, `manual` or `current-account`), `model`,
+`baseUrl`, `contextWindowSize` and `supportsToolCall`. Optional fields include
+`name`, `maxTokens`, `supportsReasoning`, `supportsStreaming`, `enableReasoning`,
+`stream`, `temperature` and `topP`. Keep credentials out of provider options;
+trusted hosts can use `auxiliaryCredentials` keyed by model profile ID.
+
+`HarnessKitThreadSnapshot` can include `modelId`, `runSummaries`,
+`supersededTurnIds`, `workspaceContext` and `workspaceBindingVersion`.
+`workspaceContext` has a `workspaceId` and optional `workspaceRevision`,
+`canonicalRoot` and `workingDirectory`. `HarnessKitRunResult` can include
+`skillActivation`, `modelSelections` and a `summary`. A `HarnessKitRunSummary`
+requires `runId` and `status`; optional fields include `threadId`, `turnId`,
+`createdAt`, `startedAt`, `completedAt`, `lastActivityAt`, `executionDurationMs`,
+`executionActiveSince`, `modelCalls`, `modelInputTokens`, `modelOutputTokens`,
+`modelTotalTokens`, `toolCalls`, `toolCompleted`, `toolFailed`, `toolCancelled`,
+`autoResumePending`, `segmentIndex`, `continuationReason`, `pendingApproval`
+and `pendingHumanInput`.
+
+For event streams, `isHarnessKitSkillActivatedEvent(event)` narrows
+`skill.activated` events, whose optional `data.records` include `skillId`,
+`version`, and optional `source`, `contentHash`, `estimatedInstructionTokens`
+and `loadedResourceIds`; `data.routing` is also optional.
+`isHarnessKitSubagentModelSelectedEvent(event)` narrows `model.selected` events
+with `data.subagent === true`; `modelId`, `modelName`, `profileId`, `reason`,
+`task` and `selectionSource` are optional.
 
 ### OpenTool Exports
 

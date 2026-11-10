@@ -181,13 +181,14 @@ app 模型还会带有 `appBundleId` 与 `appName`（app 的可读名称，用�
 `appName` 仅在网关返回时才有值，缺失时请回退到 `appBundleId`）。对于尚未提供
 `source` 的旧网关，或 `source` 为未知值时，会按网关的规则由旧布尔字段推导。
 
-网关已知时，`ModelInfo` 还会带有 `contextWindowSize` 与 `maxOutputTokens`（模型单次
-响应最多可生成的 token 数），否则为 `undefined`。只有 chat 模型才会返回 `maxOutputTokens`
-（embedding、ASR、TTS、decision 模型不生成文本，该值为 `undefined`）；返回了 `contextWindowSize`
-的 chat 模型一定会返回 `maxOutputTokens`，模型自身没有该值时与 `contextWindowSize` 相同。
-App 注册模型时可同时设置两者
+`ModelInfo` 可以包含 `contextWindowSize` 与 `maxOutputTokens`（模型单次响应最多可生成
+的 token 数）。两者都是可选字段：SDK 读取网关返回的值，不会自行补全缺失的
+`maxOutputTokens`。当前网关只为 chat 模型返回该输出上限，embedding、ASR、TTS 和
+decision 模型不返回。chat 模型已知 `contextWindowSize` 但没有单独设置输出上限时，
+当前网关会使用上下文窗口大小作为输出上限；旧网关即使返回上下文窗口，也可能不返回
+`maxOutputTokens`。App 注册模型时可在 `AppModelRegistration` 中同时设置两者
 （`registerAppModel({ request: { name, contextWindowSize: 32768, maxOutputTokens: 4096 } })`）；
-`AppModel` 会原样返回，`updateAppModel` 也可以修改。
+`AppModel` 会在网关提供时返回这两个字段，`AppModelUpdate` 也可以修改。
 
 ### 使用 ModelKit Decision
 
@@ -360,6 +361,10 @@ new AgentOSSDK({
 | `subscribe(handler, options?)` | `AgentOSEventHandler`、`AgentOSSubscribeOptions` | 订阅 AppKit SSE 事件；设置 `toolEvents: { scope: 'all' }` 或 `{ scope: 'selected', toolIds: [...] }` 可接收对应范围的 ToolKit 生命周期通知。 |
 | `connectionEvents` | `Subscription<AgentOSSubscribeConnectionEvent>` | 监听 AppKit SSE 连接状态变化。 |
 | `connectionStatus` | `AgentOSSubscribeConnectionStatus \| undefined` | 获取最近一次 AppKit SSE 连接状态。 |
+
+自动重连时会保留工具事件的订阅范围。`toolkit.tool.available` 和
+`toolkit.tool.unavailable` AppEvent 的 `data` 包含 `id`、`status` 和 `reason`；可用
+`isToolLifecycleEvent(event)` 将其收窄为 `ToolAvailableEvent | ToolUnavailableEvent`。
 
 ### CronKitModule（`sdk.cronkit`）
 
@@ -552,9 +557,15 @@ const result = await sdk.notifykit.publish({
 console.log(result.notification.id, result.notification.count);
 ```
 
+`NotifyKitPublishRequest` 必须提供小写点分格式的 `eventType`、`title` 和 `message`，
+`subjectId` 可选。返回值包含 `accepted: true` 和 `notification`，后者包含 `id`、`source`、
+`sourceType`、`eventType`、`category`、`title`、`message`、`level`、`createdAt`、`updatedAt`、
+`count` 和可选的 `subjectId`。`level` 为 `info`、`success`、`warning` 或 `error`。
+
 用户在 AgentOS Desktop 点击该 App 发布的通知时，AppKit 会收到
 `notification.activated` 事件。可用 `isNotificationActivatedEvent(event)` 收窄事件类型；
-`subject` 为 App 提供的 `subjectId`，未提供时则为通知 ID。
+`subject` 为 App 提供的 `subjectId`，未提供时则为通知 ID。事件的 `data` 包含
+`notificationId`、`eventType` 和可选的 `subjectId`。
 
 ### DiscoveryKitModule（`sdk.discoverykit`）
 
@@ -741,7 +752,7 @@ interface TransferHistoryRecord {
 HarnessKit 会通过 Gateway 将请求转发到宿主共享的 Harness runtime。先调用
 `sdk.agentos.registerBundle()` 注册应用；任何有效的 AppKit token 都能访问该 runtime，
 无需在应用配置中声明 HarnessKit 或单独登记。Gateway 按已验证的 `bundleId` 隔离外部
-App 的线程、运行记录和事件。所有 App 都能读取当前引擎；只有内置 Harness App 能切换引擎
+App 的线程、运行记录和事件。所有 App 都能读取当前引擎；只有内置 Harness App 能切换引擎、
 读取全局运维快照、管理宿主工作区或修改宿主技能库。外部 App 可以发现技能并分支自己的会话。
 方法自动使用当前 AppKit token，并在 token 过期时刷新重试一次。
 
@@ -753,8 +764,8 @@ App 的线程、运行记录和事件。所有 App 都能读取当前引擎；�
 | `forkThread(request)` | `HarnessKitForkThreadRequest` | 从本应用会话的指定助手消息创建分支。 |
 | `listSkills()` | 无 | 获取可用技能目录。 |
 | `getSkillSettings()` / `updateSkillSettings(settings)` | `HarnessKitSkillSettingsUpdate` | 读取或替换宿主技能库配置（仅内置 Harness）。 |
-| `listWorkspaces()` / `createWorkspace()` / `updateWorkspace()` | 工作区 ID、配置 | 查看和管理设备工作区（仅内置 Harness）。 |
-| `relinkWorkspace()` / `validateWorkspace()` | 工作区 ID、路径 | 重新关联或验证设备工作区（仅内置 Harness）。 |
+| `listWorkspaces(includeArchived?)` / `createWorkspace(workspace)` / `updateWorkspace(workspaceId, changes)` | `includeArchived`、工作区 ID 和配置 | 查看和管理设备工作区（仅内置 Harness）。 |
+| `relinkWorkspace(workspaceId, rootPath)` / `validateWorkspace(workspaceId)` | 工作区 ID、路径 | 重新关联或验证设备工作区（仅内置 Harness）。 |
 | `renameThread(threadId, title)` / `deleteThread(threadId)` | `threadId`、`title` | 修改线程标题或删除空闲线程。 |
 | `startRun(threadId, request)` | `threadId`、`HarnessKitRunRequest` | 启动 Harness Run 并返回 `runId`。 |
 | `submitCommand(threadId, command)` | `threadId`、`HarnessKitCommand` | 提交工作或控制命令；被拒绝的命令仍返回 receipt。 |
@@ -799,12 +810,13 @@ for await (const event of events) {
 
 运行请求以及 `submit_turn` / `edit_and_resend` 命令都可设置可选的 `toolPolicy`。
 省略 `allowedToolIds` 或设为 `null` 表示不限制允许列表；空数组表示禁用所有工具。
-拒绝列表优先。`approvalMode` 支持 `ask`、默认的 `onRisk` 和 `fullAccess`；也会透传旧字段
-`requireApprovalForSideEffects`。`HarnessKitCommand` 和 `HarnessKitRunRequest` 保留开放的
+拒绝列表优先。`approvalMode` 支持 `ask`、默认的 `onRisk`、`fullAccess`、`systemOne`
+及宿主自定义字符串；也会透传旧字段 `requireApprovalForSideEffects`，两者同时提供时
+`approvalMode` 优先。`HarnessKitCommand` 和 `HarnessKitRunRequest` 保留开放的
 JSON 字段，方便透传后续 Harness 新增字段。如果当前引擎未实现可选的 operational reader，
-`getOperationalSnapshot()` 可能返回 HTTP `501`。宿主管理接口返回 `403` 时不会触发 AppKit
-token 刷新。在 AgentOS Mobile WebView 中，Native bridge 也需要支持 `/harnesskit/*`；
-未支持的 bridge 路由会以 `ApiError` 暴露。
+`getOperationalSnapshot()` 可能返回 HTTP `501`。宿主管理接口返回
+`harness_host_access_forbidden` 时不会触发 AppKit token 刷新。在 AgentOS Mobile WebView
+中，Native bridge 也需要支持 `/harnesskit/*`；未支持的 bridge 路由会以 `ApiError` 暴露。
 
 ### 为 Harness 指定 System One 决策模型
 
@@ -835,10 +847,58 @@ if (decisionModel) {
 
 通过 `startRun` 启动时，在 `HarnessKitRunRequest` 中使用相同配置字段
 `decisionModelConfig`。省略字段时，Harness 会按默认行为选择决策方式。Run 请求和命令
-可通过 `skillSelection` 与 `skillPolicy` 指定技能；`model.selected` 事件中的
-`data.subagent === true` 表示子任务的模型选择，包含模型及选择理由，可用
-`isHarnessKitSubagentModelSelectedEvent(event)` 做类型判断。会话分支的隔离和宿主工作区
-权限限制需要配合更新后的 Gateway 使用。
+可通过 `skillSelection` 与 `skillPolicy` 指定技能。会话分支的隔离和宿主工作区权限限制
+需要配合更新后的 Gateway 使用。
+
+### HarnessKit 请求与结果字段
+
+`forkThread()` 必须提供四个字段：`sourceThreadId`、新会话的 `threadId`、
+`throughTurnId`（分支所截至的助手轮次）和 `title`。`listSkills()` 返回的
+`HarnessKitSkill` 包含 `skillId`、`name`、`description`、`version`，以及可选的 `enabled`、
+`source`、`builtin`、`requiredToolIds`、`missingToolIds`。`updateSkillSettings()` 会整体替换
+三个必填字段：`roots`、`disabledSkillIds` 和 `automatic`；`getSkillSettings()` 还会返回
+`skills`，并可能包含 `catalogError` 或 `unavailableRoots`。
+
+`createWorkspace()` 必须提供 `folderPaths`，可选提供 `name`；`updateWorkspace()` 接受
+`name`、`folderPaths` 和 `archived`；`listWorkspaces(true)` 会包含已归档的工作区。
+工作区结果包含 `workspaceId`、`name`、`revision`、`createdAt`、`updatedAt`，以及可选的
+`rootPath`、`folderPaths`、`archivedAt`。`validateWorkspace()` 返回 `valid`、`workspaceId`、
+`instructionFiles` 和可选的 `rootPath`、`folderPaths`。工作区管理和宿主技能配置接口仅限
+内置 Harness App 使用。
+
+`HarnessKitRunRequest` 和 `HarnessKitCommand` 都接受 `workspaceId`、`skillSelection` 和
+`skillPolicy`。`skillSelection` 支持 `required` 和 `preferred`（元素为
+`{ skillId, version? }`）、`excludedSkillIds`、`autoSelect`、`maxActiveSkills`、
+`maxInstructionTokens`。`skillPolicy` 支持 `allowedTrustLevels`（`trusted`、`verified`、
+`untrusted`）、`allowedSkillIds`、`deniedSkillIds`、`allowAutomaticSelection`、
+`defaultMaxActiveSkills`、`defaultMaxInstructionTokens`。
+
+`HarnessKitCommand` 还为 `actorId`、`input`、`inputContentParts`、`llmConfigOverride`、
+`expectedRevision`、`expectedBindingVersion`、`queueMode`（`append`、`insertNext`、`steer`、
+`draft` 或宿主自定义字符串），以及 `runId`、`turnId`、`targetRunId`、`targetTurnId`
+目标字段提供类型。`HarnessKitLlmConfig.providerOptions.subagentModels` 接受模型配置，
+每项必须包含 `id`、`source`（`agentos`、`manual` 或 `current-account`）、`model`、
+`baseUrl`、`contextWindowSize`、`supportsToolCall`，也可包含 `name`、`maxTokens`、
+`supportsReasoning`、`supportsStreaming`、`enableReasoning`、`stream`、`temperature`、`topP`。
+不要将凭据放在 provider options 中；受信任的宿主可使用以模型配置 ID 为键的
+`auxiliaryCredentials`。
+
+`HarnessKitThreadSnapshot` 可包含 `modelId`、`runSummaries`、`supersededTurnIds`、
+`workspaceContext`、`workspaceBindingVersion`。`workspaceContext` 包含 `workspaceId` 和可选的
+`workspaceRevision`、`canonicalRoot`、`workingDirectory`。`HarnessKitRunResult` 可包含
+`skillActivation`、`modelSelections` 和 `summary`。`HarnessKitRunSummary` 必须包含 `runId`
+和 `status`；可选字段包括 `threadId`、`turnId`、`createdAt`、`startedAt`、`completedAt`、
+`lastActivityAt`、`executionDurationMs`、`executionActiveSince`、`modelCalls`、
+`modelInputTokens`、`modelOutputTokens`、`modelTotalTokens`、`toolCalls`、`toolCompleted`、
+`toolFailed`、`toolCancelled`、`autoResumePending`、`segmentIndex`、`continuationReason`、
+`pendingApproval`、`pendingHumanInput`。
+
+对于事件流，`isHarnessKitSkillActivatedEvent(event)` 可收窄 `skill.activated` 事件；
+可选的 `data.records` 包含 `skillId`、`version`，以及可选的 `source`、`contentHash`、
+`estimatedInstructionTokens`、`loadedResourceIds`；`data.routing` 也可选。
+`isHarnessKitSubagentModelSelectedEvent(event)` 可收窄 `data.subagent === true` 的
+`model.selected` 事件；`modelId`、`modelName`、`profileId`、`reason`、`task` 和
+`selectionSource` 均为可选字段。
 
 ### OpenTool 导出
 
