@@ -71,6 +71,13 @@ export interface ModelInfo {
   description?: string;
   task: ModelTask;
   contextWindowSize?: number;
+  /**
+   * Maximum number of tokens the model can generate in one response (the
+   * platform's `maxTokens`). Only present when the gateway reports it, and only
+   * for chat models (embedding, ASR, TTS and decision models omit it); never
+   * larger than `contextWindowSize` for local models.
+   */
+  maxOutputTokens?: number;
   input: Modality[];
   output: Modality[];
   capabilities: ModelCapabilities;
@@ -309,6 +316,8 @@ export interface AppModel {
   baseUrl?: string;
   hasApiKey: boolean;
   contextWindowSize?: number;
+  /** Maximum number of tokens the model can generate in one response. */
+  maxOutputTokens?: number;
   /** Disabled models stay registered but are hidden from model lists. */
   isDisabled: boolean;
   /** Bundle ID of the app that owns this model. */
@@ -344,6 +353,8 @@ export interface AppModelRegistration {
   /** Upstream credential. Stored by the server and never returned. */
   apiKey?: string;
   contextWindowSize?: number;
+  /** Maximum number of tokens the model can generate in one response. */
+  maxOutputTokens?: number;
   /** Must match the bundle ID of the bearer token when provided. */
   appBundleId?: string;
   appName?: string;

@@ -1468,6 +1468,7 @@ test('modelkit listModels normalizes task, capabilities, and remote flags', asyn
             alias: 'qwen3-8b',
             task: 'chat',
             contextWindowSize: 8192,
+            maxOutputTokens: 4096,
             isRemote: false,
             isCustom: false
           },
@@ -1503,6 +1504,9 @@ test('modelkit listModels normalizes task, capabilities, and remote flags', asyn
   assert.equal(models[0].capabilities.vision, false);
   assert.equal(models[0].capabilities.reasoning, false);
   assert.equal(models[0].isRemote, false);
+  assert.equal(models[0].contextWindowSize, 8192);
+  assert.equal(models[0].maxOutputTokens, 4096);
+  assert.equal('maxOutputTokens' in models[1], false);
   assert.equal(models[1].capabilities.vision, true);
   assert.equal(models[1].capabilities.reasoning, true);
   assert.deepEqual(models[1].input, ['text', 'image']);
@@ -1754,6 +1758,7 @@ test('modelkit listAppModels is public and normalizes every field', async () => 
             baseUrl: 'http://127.0.0.1:9000',
             hasApiKey: true,
             contextWindowSize: 8192,
+            maxOutputTokens: 4096,
             isDisabled: true,
             appBundleId: 'com.demo.app',
             appName: 'Demo'
@@ -1783,6 +1788,7 @@ test('modelkit listAppModels is public and normalizes every field', async () => 
     baseUrl: 'http://127.0.0.1:9000',
     hasApiKey: true,
     contextWindowSize: 8192,
+    maxOutputTokens: 4096,
     isDisabled: true,
     appBundleId: 'com.demo.app',
     appName: 'Demo'
@@ -1792,6 +1798,7 @@ test('modelkit listAppModels is public and normalizes every field', async () => 
   assert.equal(models[1].isDisabled, false);
   assert.equal('baseUrl' in models[1], false);
   assert.equal('contextWindowSize' in models[1], false);
+  assert.equal('maxOutputTokens' in models[1], false);
   assert.deepEqual(models[1].input, ['text']);
 });
 
@@ -1812,12 +1819,15 @@ test('modelkit app model write calls send the explicit bearer token and id paths
     name: 'router',
     task: 'decision',
     baseUrl: 'http://127.0.0.1:9000',
-    apiKey: 'secret'
+    apiKey: 'secret',
+    contextWindowSize: 8192,
+    maxOutputTokens: 4096
   });
   const updated = await client.updateAppModel('token-1', '6f78dcce6717', {
     name: 'renamed',
     task: 'decision',
-    capabilities: { reasoning: false }
+    capabilities: { reasoning: false },
+    maxOutputTokens: 2048
   });
   await client.toggleAppModel('token-1', '6f78dcce6717');
   await client.unregisterAppModel('token-1', '6f78dcce6717');
@@ -1840,12 +1850,15 @@ test('modelkit app model write calls send the explicit bearer token and id paths
     name: 'router',
     task: 'decision',
     baseUrl: 'http://127.0.0.1:9000',
-    apiKey: 'secret'
+    apiKey: 'secret',
+    contextWindowSize: 8192,
+    maxOutputTokens: 4096
   });
   assert.deepEqual(seen[1].body, {
     name: 'renamed',
     task: 'decision',
-    capabilities: { reasoning: false }
+    capabilities: { reasoning: false },
+    maxOutputTokens: 2048
   });
   assert.equal(seen[2].body, undefined);
   assert.equal(seen[3].body, undefined);

@@ -181,6 +181,14 @@ app 模型还会带有 `appBundleId` 与 `appName`（app 的可读名称，用�
 `appName` 仅在网关返回时才有值，缺失时请回退到 `appBundleId`）。对于尚未提供
 `source` 的旧网关，或 `source` 为未知值时，会按网关的规则由旧布尔字段推导。
 
+网关已知时，`ModelInfo` 还会带有 `contextWindowSize` 与 `maxOutputTokens`（模型单次
+响应最多可生成的 token 数），否则为 `undefined`。只有 chat 模型才会返回 `maxOutputTokens`
+（embedding、ASR、TTS、decision 模型不生成文本，该值为 `undefined`）；返回了 `contextWindowSize`
+的 chat 模型一定会返回 `maxOutputTokens`，模型自身没有该值时与 `contextWindowSize` 相同。
+App 注册模型时可同时设置两者
+（`registerAppModel({ request: { name, contextWindowSize: 32768, maxOutputTokens: 4096 } })`）；
+`AppModel` 会原样返回，`updateAppModel` 也可以修改。
+
 ### 使用 ModelKit Decision
 
 Decision 模型（`ModelTask.decision`，由 llama.cpp `/v1/systemone` 提供）不生成

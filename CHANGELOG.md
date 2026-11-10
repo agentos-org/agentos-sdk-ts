@@ -2,6 +2,9 @@
 
 ## 2.5.0
 
+- feat: add `maxOutputTokens` (the maximum number of tokens a model can generate
+  in one response, the platform's `maxTokens`) to `ModelInfo`, `AppModel`,
+  `AppModelRegistration` and `AppModelUpdate`.
 - feat(harnesskit): expose skill selection, skill catalog and host settings,
   thread forking, workspace operations, and run activity types.
 - fix(harnesskit): align decision-model options with current Harness; mark

@@ -372,6 +372,9 @@ function normalizeModelInfo(item: Record<string, unknown>): ModelInfo {
     description: item.description === undefined ? undefined : String(item.description),
     task,
     contextWindowSize: item.contextWindowSize === undefined ? undefined : Number(item.contextWindowSize),
+    ...(item.maxOutputTokens === undefined || item.maxOutputTokens === null
+      ? {}
+      : { maxOutputTokens: Number(item.maxOutputTokens) }),
     input,
     output,
     capabilities: {
@@ -412,6 +415,9 @@ function normalizeAppModel(item: Record<string, unknown>): AppModel {
     ...(item.contextWindowSize === undefined || item.contextWindowSize === null
       ? {}
       : { contextWindowSize: Number(item.contextWindowSize) }),
+    ...(item.maxOutputTokens === undefined || item.maxOutputTokens === null
+      ? {}
+      : { maxOutputTokens: Number(item.maxOutputTokens) }),
     isDisabled: Boolean(item.isDisabled),
     appBundleId: String(item.appBundleId ?? ''),
     appName: String(item.appName ?? '')
