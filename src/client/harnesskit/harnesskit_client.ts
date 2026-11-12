@@ -78,7 +78,7 @@ export class HarnessKitClient {
     return this.request(bearerToken, '/admin/api/harness/skills', { method: 'PUT', data: settings });
   }
 
-  /** Workspace management is restricted to the built-in Harness app. */
+  /** List workspaces visible to the registered app. */
   async listWorkspaces(bearerToken: string, includeArchived = false): Promise<HarnessKitWorkspace[]> {
     const response = await this.request<{ workspaces?: HarnessKitWorkspace[] }>(bearerToken, '/v1/workspaces', {
       query: includeArchived ? { includeArchived: true } : undefined

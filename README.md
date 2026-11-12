@@ -786,8 +786,15 @@ HarnessKit registration. The Gateway isolates external apps' threads, runs,
 and events by the authenticated `bundleId`. Every app can read the active
 engine, while only the built-in Harness app can switch it or read the global
 operational snapshot, manage host workspaces or change the host skill library.
-External apps can discover skills and fork their own threads. Methods use the
-active AppKit token and refresh it once when authentication has expired.
+External apps can discover skills, fork their own threads, and list or validate
+workspaces assigned to them. Methods use the active AppKit token and refresh it
+once when authentication has expired.
+
+The SDK talks to the Gateway over HTTP/SSE and does not read the runtime's JSONL
+files directly. Reuse the same `bundleId` after restart to access that app's
+history. To resume an interrupted event stream, open `events()` again with
+`afterSequence` set to the last event sequence you processed; the SDK does not
+reconnect an interrupted stream automatically.
 
 | Method | Parameters | Description |
 | --- | --- | --- |
@@ -797,8 +804,8 @@ active AppKit token and refresh it once when authentication has expired.
 | `forkThread(request)` | `HarnessKitForkThreadRequest` | Forks an app-owned thread through an assistant turn. |
 | `listSkills()` | none | Lists the available skill catalog. |
 | `getSkillSettings()` / `updateSkillSettings(settings)` | `HarnessKitSkillSettingsUpdate` | Reads or replaces the host skill library configuration (built-in Harness only). |
-| `listWorkspaces(includeArchived?)` / `createWorkspace(workspace)` / `updateWorkspace(workspaceId, changes)` | `includeArchived`, workspace ID and settings | Lists and manages device workspaces (built-in Harness only). |
-| `relinkWorkspace(workspaceId, rootPath)` / `validateWorkspace(workspaceId)` | workspace ID, path | Relinks or validates a device workspace (built-in Harness only). |
+| `listWorkspaces(includeArchived?)` / `validateWorkspace(workspaceId)` | `includeArchived`, workspace ID | Lists or validates workspaces available to the registered app. |
+| `createWorkspace(workspace)` / `updateWorkspace(workspaceId, changes)` / `relinkWorkspace(workspaceId, rootPath)` | workspace ID and settings | Manages device workspace registration (built-in Harness only). |
 | `renameThread(threadId, title)` / `deleteThread(threadId)` | `threadId`, `title` | Updates a thread title or deletes an idle thread. |
 | `startRun(threadId, request)` | `threadId`, `HarnessKitRunRequest` | Starts a Harness run and returns its `runId`. |
 | `submitCommand(threadId, command)` | `threadId`, `HarnessKitCommand` | Submits work or control commands; rejected commands return their receipt. |
@@ -905,8 +912,9 @@ and may report `catalogError` or `unavailableRoots`.
 `workspaceId`, `name`, `revision`, `createdAt` and `updatedAt`, with optional
 `rootPath`, `folderPaths` and `archivedAt`. `validateWorkspace()` returns
 `valid`, `workspaceId`, `instructionFiles` and optional `rootPath` and
-`folderPaths`. All workspace-management and host skill settings methods are
-restricted to the built-in Harness app.
+`folderPaths`. Apps can list and validate their own workspaces; workspace
+registration changes and host skill settings are restricted to the built-in
+Harness app.
 
 Both `HarnessKitRunRequest` and `HarnessKitCommand` accept `workspaceId`,
 `skillSelection` and `skillPolicy`. The selection supports `required` and

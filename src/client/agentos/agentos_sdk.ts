@@ -1040,7 +1040,7 @@ export class HarnessKitModule {
     return this.client.withAppAuthRetry((token) => this.client.harnessKit.updateSkillSettings(token, settings));
   }
 
-  /** Workspace management is restricted to the built-in Harness app. */
+  /** List workspaces visible to the registered app. */
   listWorkspaces(includeArchived = false): Promise<HarnessKitWorkspace[]> {
     return this.client.withAppAuthRetry((token) => this.client.harnessKit.listWorkspaces(token, includeArchived));
   }

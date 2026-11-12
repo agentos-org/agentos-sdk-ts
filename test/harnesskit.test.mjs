@@ -45,15 +45,32 @@ test('HarnessKit sends typed skill, decision, fork and workspace requests with b
 
 test('host-only denial does not refresh AppKit credentials', async () => {
   let registrations = 0;
-  const sdk = new AgentOSSDK({ baseUrl: 'http://example.test', fetch: async (url) => {
+  const sdk = new AgentOSSDK({ baseUrl: 'http://example.test', fetch: async (url, init) => {
     const path = new URL(url).pathname;
     if (path === '/appkit/register') { registrations++; return json({ token: 'token', bundleId: 'com.test.app' }); }
-    if (path === '/harnesskit/v1/workspaces') return json({ error: { code: 'harness_host_access_forbidden', message: 'host only' } }, 403);
+    if (path === '/harnesskit/v1/workspaces' && init.method === 'POST') return json({ error: { code: 'harness_host_access_forbidden', message: 'host only' } }, 403);
     throw new Error(`unexpected ${path}`);
   }});
   await sdk.agentos.registerBundle({ bundleId: 'com.test.app' });
-  await assert.rejects(() => sdk.harnesskit.listWorkspaces(), (error) => error.status === 403);
+  await assert.rejects(() => sdk.harnesskit.createWorkspace({ folderPaths: ['/tmp/project'] }), (error) => error.status === 403);
   assert.equal(registrations, 1);
+  await sdk.dispose();
+});
+
+test('apps can list and validate their scoped workspaces with an AppKit token', async () => {
+  const calls = [];
+  const sdk = new AgentOSSDK({ baseUrl: 'http://example.test', fetch: async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path === '/appkit/register') return json({ token: 'token', bundleId: 'com.test.app' });
+    calls.push({ path, method: init.method, authorization: init.headers.authorization });
+    if (path === '/harnesskit/v1/workspaces' && init.method === 'GET') return json({ workspaces: [{ workspaceId: 'owned' }] });
+    if (path === '/harnesskit/v1/workspaces/owned/validate' && init.method === 'POST') return json({ valid: true, workspaceId: 'owned', instructionFiles: 0 });
+    throw new Error(`unexpected ${path}`);
+  }});
+  await sdk.agentos.registerBundle({ bundleId: 'com.test.app' });
+  assert.equal((await sdk.harnesskit.listWorkspaces())[0].workspaceId, 'owned');
+  assert.equal((await sdk.harnesskit.validateWorkspace('owned')).valid, true);
+  assert(calls.every(call => call.authorization === 'Bearer token'));
   await sdk.dispose();
 });
 
