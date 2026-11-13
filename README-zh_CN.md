@@ -751,10 +751,10 @@ interface TransferHistoryRecord {
 
 HarnessKit 会通过 Gateway 将请求转发到宿主共享的 Harness runtime。先调用
 `sdk.agentos.registerBundle()` 注册应用；任何有效的 AppKit token 都能访问该 runtime，
-无需在应用配置中声明 HarnessKit 或单独登记。Gateway 按已验证的 `bundleId` 隔离外部
+无需在应用配置中声明 HarnessKit 或单独登记。Gateway 按 token 对应的 `bundleId` 隔离外部
 App 的线程、运行记录和事件。所有 App 都能读取当前引擎；只有内置 Harness App 能切换引擎、
-读取全局运维快照、管理宿主工作区或修改宿主技能库。外部 App 可以发现技能、分支自己的会话，
-以及查看或验证归属于自己的工作区。方法自动使用当前 AppKit token，并在 token 过期时刷新重试一次。
+读取全局运维快照或修改宿主技能库。外部 App 可以发现技能、分支自己的会话，以及注册和管理
+自己的本机工作区；注册目录不会弹出用户授权确认。方法自动使用当前 AppKit token，并在 token 过期时刷新重试一次。
 
 SDK 通过 HTTP/SSE 调用 Gateway，不直接读写运行时的 JSONL 文件。重启后使用相同的
 `bundleId` 注册即可访问该 App 的历史；事件流中断后，可用最后处理的事件序号作为
@@ -769,7 +769,7 @@ SDK 通过 HTTP/SSE 调用 Gateway，不直接读写运行时的 JSONL 文件。
 | `listSkills()` | 无 | 获取可用技能目录。 |
 | `getSkillSettings()` / `updateSkillSettings(settings)` | `HarnessKitSkillSettingsUpdate` | 读取或替换宿主技能库配置（仅内置 Harness）。 |
 | `listWorkspaces(includeArchived?)` / `validateWorkspace(workspaceId)` | `includeArchived`、工作区 ID | 查看或验证当前 App 可访问的工作区。 |
-| `createWorkspace(workspace)` / `updateWorkspace(workspaceId, changes)` / `relinkWorkspace(workspaceId, rootPath)` | 工作区 ID 和配置 | 管理设备工作区登记（仅内置 Harness）。 |
+| `createWorkspace(workspace)` / `updateWorkspace(workspaceId, changes)` / `relinkWorkspace(workspaceId, rootPath)` | 工作区 ID 和配置 | 管理当前 App 的设备工作区登记。 |
 | `renameThread(threadId, title)` / `deleteThread(threadId)` | `threadId`、`title` | 修改线程标题或删除空闲线程。 |
 | `startRun(threadId, request)` | `threadId`、`HarnessKitRunRequest` | 启动 Harness Run 并返回 `runId`。 |
 | `submitCommand(threadId, command)` | `threadId`、`HarnessKitCommand` | 提交工作或控制命令；被拒绝的命令仍返回 receipt。 |
@@ -867,8 +867,8 @@ if (decisionModel) {
 `name`、`folderPaths` 和 `archived`；`listWorkspaces(true)` 会包含已归档的工作区。
 工作区结果包含 `workspaceId`、`name`、`revision`、`createdAt`、`updatedAt`，以及可选的
 `rootPath`、`folderPaths`、`archivedAt`。`validateWorkspace()` 返回 `valid`、`workspaceId`、
-`instructionFiles` 和可选的 `rootPath`、`folderPaths`。各 App 可以查看或验证自己的工作区；
-更改工作区登记及宿主技能配置仅限内置 Harness App 使用。
+`instructionFiles` 和可选的 `rootPath`、`folderPaths`。各 App 可以查看、验证和管理自己的工作区；
+更改宿主技能配置仅限内置 Harness App 使用。
 
 `HarnessKitRunRequest` 和 `HarnessKitCommand` 都接受 `workspaceId`、`skillSelection` 和
 `skillPolicy`。`skillSelection` 支持 `required` 和 `preferred`（元素为
