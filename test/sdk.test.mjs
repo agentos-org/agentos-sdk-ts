@@ -1612,6 +1612,97 @@ test('modelkit listModels reports source and appName from the gateway', async ()
   }
 });
 
+test('modelkit listModels reports benefit card models next to plan models', async () => {
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/modelkit/models') {
+        return jsonResponse([
+          {
+            id: 'subscription:deepseek-v4-flash',
+            name: 'deepseek-v4-flash',
+            alias: 'deepseek-v4-flash',
+            task: 'chat',
+            isRemote: true,
+            source: 'platform'
+          },
+          {
+            id: 'bc_7',
+            name: 'deepseek-v4-flash',
+            alias: 'deepseek-v4-flash',
+            task: 'chat',
+            isRemote: true,
+            source: 'platform',
+            isBenefitCard: true,
+            benefitCardId: 'card-1',
+            benefitCardName: ' Spring card '
+          },
+          {
+            id: 'bc_8',
+            name: 'qwen-max',
+            task: 'chat',
+            isRemote: true,
+            source: 'platform',
+            isBenefitCard: true,
+            benefitCardId: 'card-2',
+            benefitCardName: '   '
+          }
+        ]);
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+
+  const models = await sdk.modelkit.listModels();
+
+  // A card model stays a platform model with its plain name and alias.
+  assert.deepEqual(models.map((m) => m.source), ['platform', 'platform', 'platform']);
+  assert.equal(models[1].name, models[0].name);
+  assert.equal(models[1].alias, models[0].alias);
+
+  for (const key of ['isBenefitCard', 'benefitCardId', 'benefitCardName']) {
+    assert.equal(key in models[0], false);
+  }
+
+  assert.equal(models[1].isBenefitCard, true);
+  assert.equal(models[1].benefitCardId, 'card-1');
+  assert.equal(models[1].benefitCardName, 'Spring card');
+
+  // A blank card name is dropped; the card id stays available as a label.
+  assert.equal(models[2].isBenefitCard, true);
+  assert.equal(models[2].benefitCardId, 'card-2');
+  assert.equal('benefitCardName' in models[2], false);
+});
+
+test('modelkit listModels reports the billing type of system models', async () => {
+  const platform = { isRemote: true, source: 'platform', task: 'chat' };
+  const sdk = new AgentOSSDK({
+    fetch: createMockFetch((request) => {
+      if (request.pathname === '/modelkit/models') {
+        return jsonResponse([
+          { id: 'subscription:a', name: 'a', ...platform, billingType: 'free' },
+          { id: 'subscription:b', name: 'b', ...platform, billingType: 'plan' },
+          { id: 'bc_9', name: 'c', ...platform, billingType: ' PayAsYouGo ' },
+          // No field (benefit card, local, custom, old gateway), blank and unknown values.
+          { id: 'bc_7', name: 'd', ...platform, isBenefitCard: true, benefitCardId: 'card-1' },
+          { id: 'blank', name: 'e', ...platform, billingType: '  ' },
+          { id: 'unknown', name: 'f', ...platform, billingType: 'subscription' }
+        ]);
+      }
+      throw new Error(`Unhandled request: ${request.method} ${request.pathname}`);
+    })
+  });
+
+  const models = await sdk.modelkit.listModels();
+
+  assert.deepEqual(
+    models.slice(0, 3).map((m) => m.billingType),
+    ['free', 'plan', 'payAsYouGo']
+  );
+  for (const model of models.slice(3)) {
+    assert.equal('billingType' in model, false, model.id);
+  }
+});
+
 test('modelkit listModels derives source when the gateway does not send it', async () => {
   const sdk = new AgentOSSDK({
     fetch: createMockFetch((request) => {

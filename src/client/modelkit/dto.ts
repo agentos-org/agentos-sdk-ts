@@ -55,6 +55,23 @@ export const ModelSource = Object.freeze({
   app: 'app'
 } as const);
 
+/**
+ * How a system model is billed, as reported by the gateway's `billingType`
+ * field. Only platform models that are not benefit card models have one.
+ *
+ * - `free`: served by the free plan every account without a subscription is on.
+ * - `plan`: included in the user's paid subscription plan.
+ * - `payAsYouGo`: billed to the account balance by actual usage.
+ */
+export type ModelBillingType = 'free' | 'plan' | 'payAsYouGo';
+
+/** Frozen lookup table for callers that want to access the value by key. */
+export const ModelBillingType = Object.freeze({
+  free: 'free',
+  plan: 'plan',
+  payAsYouGo: 'payAsYouGo'
+} as const);
+
 /** Capability flags that are orthogonal to input/output modalities. */
 export interface ModelCapabilities {
   vision: boolean;
@@ -103,6 +120,31 @@ export interface ModelInfo {
    * `appBundleId` otherwise.
    */
   appName?: string;
+  /**
+   * `true` when the model is served through one of the user's benefit cards.
+   * Such a model keeps `source: 'platform'` and its plain `name` / `alias`; the
+   * same model can be listed once for the plan and once for each card, and only
+   * `id` and the card fields tell them apart. Only present (as `true`) for card
+   * models.
+   */
+  isBenefitCard?: boolean;
+  /** ID of the benefit card serving the model. Only set for benefit card models. */
+  benefitCardId?: string;
+  /**
+   * Human-readable name of the benefit card serving the model, for group titles
+   * in model pickers (for example `Remote · System · ${benefitCardName}`). Only
+   * set for benefit card models, and only when the gateway reports a non-blank
+   * one; fall back to `benefitCardId` otherwise.
+   */
+  benefitCardName?: string;
+  /**
+   * How the system model is billed: free, in the paid plan or pay as you go.
+   * Only set for platform models that are not benefit card models (those are
+   * billed through their card), and only when the gateway knows it; absent for
+   * every other model and on gateways that predate the field. Pickers can mark
+   * each type with a small badge (for example "Free", "Plan" and "Pay as you go").
+   */
+  billingType?: ModelBillingType;
 }
 
 export interface ModelChatMessage {

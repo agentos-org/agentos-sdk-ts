@@ -162,7 +162,7 @@ of the model. Group and label models by it instead of combining `isRemote` /
 | `ModelSource` | Meaning | Suggested group |
 | --- | --- | --- |
 | `local` | Runs on this device | Local Models |
-| `platform` | Remote model provided by the AgentOS platform | Platform Models |
+| `platform` | Remote model provided by the AgentOS platform | Platform Models, plus `Remote · System · ${benefitCardName}` for each benefit card (see below) |
 | `custom` | Remote model configured by the user | Custom Models |
 | `app` | Registered by a third-party app | `App · ${appName}` (one group per app) |
 
@@ -184,6 +184,24 @@ app name, for group titles; `appName` is only set when the gateway reports one,
 so fall back to `appBundleId`). Against gateways that predate `source`, or when
 it holds an unknown value, `source` is derived from the legacy flags with the
 gateway's rules.
+
+Models served through a benefit card keep `source: 'platform'` and their plain
+`name` / `alias`, and additionally report `isBenefitCard`, `benefitCardId` and
+`benefitCardName` (`benefitCardName` is only set when the gateway reports one,
+so fall back to `benefitCardId`). The same model can be listed once for the plan
+and once per card, so tell them apart by `id` or the card fields, and show each
+card as its own group:
+
+```ts
+const systemGroupTitle = (model: ModelInfo): string =>
+  model.isBenefitCard
+    ? `Remote · System · ${model.benefitCardName ?? model.benefitCardId}`
+    : 'Remote · System';
+```
+
+System models that are not benefit card models also report `billingType`
+(`ModelBillingType`: `'free'`, `'plan'` or `'payAsYouGo'`; absent when unknown
+and for every other model), so a picker can mark each type with a small badge.
 
 `ModelInfo` can report `contextWindowSize` and `maxOutputTokens` (the maximum
 number of tokens generated in one response). Both are optional: the SDK reads
@@ -471,7 +489,8 @@ chat session ID is used as a fallback.
 
 `ModelInfo` reports `source` (`ModelSource`: `local` / `platform` / `custom` /
 `app`), the mutually exclusive origin of the model. App-registered models
-additionally report `isAppModel`, `appBundleId` and `appName`.
+additionally report `isAppModel`, `appBundleId` and `appName`; models served
+through a benefit card report `isBenefitCard`, `benefitCardId` and `benefitCardName`.
 The low-level `ModelKitClient` (`sdk.modelKit`) exposes the same app-model
 methods with the bearer token as the first argument, for example
 `sdk.modelKit.registerAppModel(token, request)`.

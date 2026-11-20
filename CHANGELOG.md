@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- feat: `ModelInfo` now reports `isBenefitCard`, `benefitCardId` and
+  `benefitCardName` for the models a benefit card serves. A card model keeps
+  `source: 'platform'` and its plain `name` / `alias`; the same model can be
+  listed once for the plan and once per card, and only `id` and the card fields
+  tell them apart. Group card models one group per card (for example
+  `Remote · System · ${benefitCardName}`, falling back to `benefitCardId`). The
+  fields are absent for other models and on gateways that predate them.
+- feat: `ModelInfo` now reports `billingType` (`ModelBillingType`: `'free'` /
+  `'plan'` / `'payAsYouGo'`) for system models that are not benefit card models.
+  It is absent for benefit card, local, custom and app models, and on gateways
+  that predate the field. Pickers can mark each type with a badge.
+
 ## 2.5.1
 
 - feat: add `maxOutputTokens` (the maximum number of tokens a model can generate

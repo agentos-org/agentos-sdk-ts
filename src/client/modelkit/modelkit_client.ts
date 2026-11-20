@@ -14,7 +14,7 @@ import type {
   ModelInfo,
   ModelTtsRequest
 } from './dto';
-import { Modality, ModelSource, ModelTask } from './dto';
+import { Modality, ModelBillingType, ModelSource, ModelTask } from './dto';
 import {
   ApiClient,
   asJsonList,
@@ -365,6 +365,10 @@ function normalizeModelInfo(item: Record<string, unknown>): ModelInfo {
   // 网关没有给出（或为空白）的 appName 不臆造，调用方可回退到 appBundleId。
   const appName =
     item.appName === undefined || item.appName === null ? '' : String(item.appName).trim();
+  // Benefit card fields are only present for card models; blank values are dropped.
+  const benefitCardId = nonBlankString(item.benefitCardId);
+  const benefitCardName = nonBlankString(item.benefitCardName);
+  const billingType = normalizeModelBillingType(item.billingType);
   return {
     id: String(item.id ?? ''),
     name: String(item.name ?? ''),
@@ -390,8 +394,28 @@ function normalizeModelInfo(item: Record<string, unknown>): ModelInfo {
     ...(item.appBundleId === undefined || item.appBundleId === null
       ? {}
       : { appBundleId: String(item.appBundleId) }),
-    ...(appName === '' ? {} : { appName })
+    ...(appName === '' ? {} : { appName }),
+    ...(item.isBenefitCard === true ? { isBenefitCard: true } : {}),
+    ...(benefitCardId === undefined ? {} : { benefitCardId }),
+    ...(benefitCardName === undefined ? {} : { benefitCardName }),
+    ...(billingType === undefined ? {} : { billingType })
   };
+}
+
+/** Parses the gateway's `billingType` (case-insensitive); missing or unknown values are `undefined`. */
+function normalizeModelBillingType(value: unknown): ModelBillingType | undefined {
+  if (value === undefined || value === null) return undefined;
+  const parsed = String(value).trim().toLowerCase();
+  return (Object.values(ModelBillingType) as string[]).find(
+    (type) => type.toLowerCase() === parsed
+  ) as ModelBillingType | undefined;
+}
+
+/** Returns the trimmed string form of `value`, or `undefined` when it is missing or blank. */
+function nonBlankString(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  const text = String(value).trim();
+  return text === '' ? undefined : text;
 }
 
 function normalizeAppModel(item: Record<string, unknown>): AppModel {

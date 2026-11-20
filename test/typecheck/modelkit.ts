@@ -9,7 +9,7 @@ import type {
   DecisionResponse,
   ModelInfo
 } from '../../src/index';
-import { Modality, ModelSource, ModelTask } from '../../src/index';
+import { Modality, ModelBillingType, ModelSource, ModelTask } from '../../src/index';
 
 declare const sdk: AgentOSSDK;
 
@@ -61,6 +61,18 @@ declare const model: ModelInfo;
 void model.isAppModel;
 void model.appBundleId;
 void model.appName;
+void model.isBenefitCard;
+void model.benefitCardId;
+void model.benefitCardName;
+
+// `billingType` is optional and limited to the three billing types.
+const billingType: ModelBillingType | undefined = model.billingType;
+const paidBilling: ModelBillingType = ModelBillingType.payAsYouGo;
+void billingType;
+void paidBilling;
+// @ts-expect-error `subscription` is not a known billing type.
+const invalidBilling: ModelBillingType = 'subscription';
+void invalidBilling;
 
 // `source` is the mutually exclusive origin of a model and always set.
 const source: ModelSource = model.source;

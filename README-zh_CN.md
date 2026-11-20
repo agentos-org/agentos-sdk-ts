@@ -160,7 +160,7 @@ console.log(completion.choices?.[0]?.message?.content);
 | `ModelSource` | 含义 | 建议分组 |
 | --- | --- | --- |
 | `local` | 在本机运行 | 本地模型 |
-| `platform` | AgentOS 平台提供的远端模型 | 平台模型 |
+| `platform` | AgentOS 平台提供的远端模型 | 平台模型，另为每张权益卡单独分组 `远端 · 系统 · ${benefitCardName}`（见下） |
 | `custom` | 用户自行配置的远端模型 | 自定义模型 |
 | `app` | 第三方 app 注册的模型 | `App · ${appName}`（每个 app 一组） |
 
@@ -180,6 +180,21 @@ for (const model of await sdk.modelkit.listModels()) {
 app 模型还会带有 `appBundleId` 与 `appName`（app 的可读名称，用作分组标题；
 `appName` 仅在网关返回时才有值，缺失时请回退到 `appBundleId`）。对于尚未提供
 `source` 的旧网关，或 `source` 为未知值时，会按网关的规则由旧布尔字段推导。
+
+由权益卡提供的模型仍保持 `source: 'platform'` 与原样的 `name` / `alias`，并额外带有
+`isBenefitCard`、`benefitCardId` 与 `benefitCardName`（`benefitCardName` 仅在网关返回时才有值，
+缺失时请回退到 `benefitCardId`）。同一个模型可能在套餐和每张权益卡下各出现一次，请用 `id`
+或权益卡字段区分，并让每张权益卡各自成组：
+
+```ts
+const systemGroupTitle = (model: ModelInfo): string =>
+  model.isBenefitCard
+    ? `远端 · 系统 · ${model.benefitCardName ?? model.benefitCardId}`
+    : '远端 · 系统';
+```
+
+非权益卡的系统模型还会带有 `billingType`（`ModelBillingType`：`'free'`、`'plan'` 或 `'payAsYouGo'`；
+未知时以及其他模型均不包含该字段），选择器可以为每种类型加一个小标识。
 
 `ModelInfo` 可以包含 `contextWindowSize` 与 `maxOutputTokens`（模型单次响应最多可生成
 的 token 数）。两者都是可选字段：SDK 读取网关返回的值，不会自行补全缺失的
@@ -449,7 +464,8 @@ function-call 及 callback handler；缺失或为空时回退到外层 root chat
 | `toggleAppModel({ modelId })` | `Promise<AppModelWriteResult>` | 启用/停用自己的 app model（`POST /modelkit/app-models/<id>/toggle`）。 |
 
 `ModelInfo` 带有 `source`（`ModelSource`：`local` / `platform` / `custom` / `app`），
-是模型互斥的来源。App 注册的模型还会带有 `isAppModel`、`appBundleId` 与 `appName`。底层
+是模型互斥的来源。App 注册的模型还会带有 `isAppModel`、`appBundleId` 与 `appName`；权益卡模型
+还会带有 `isBenefitCard`、`benefitCardId` 与 `benefitCardName`。底层
 `ModelKitClient`（`sdk.modelKit`）提供同样的 app model 方法，只是 bearer token
 作为第一个参数显式传入，例如 `sdk.modelKit.registerAppModel(token, request)`。
 
