@@ -782,6 +782,7 @@ SDK 通过 HTTP/SSE 调用 Gateway，不直接读写运行时的 JSONL 文件。
 | `getRuntime()` / `switchEngine(engine)` | `engine` | 读取运行时引擎信息或请求切换引擎。 |
 | `listThreads()` / `getThread(threadId)` | `threadId` | 列出持久化线程或读取单个线程快照。 |
 | `forkThread(request)` | `HarnessKitForkThreadRequest` | 从本应用会话的指定助手消息创建分支。 |
+| `registerPrivateTools(threadId, registration)` | `threadId`、`HarnessKitPrivateToolsRegistration` | 为线程注册或替换本地 App 工具。 |
 | `listSkills()` | 无 | 获取可用技能目录。 |
 | `getSkillSettings()` / `updateSkillSettings(settings)` | `HarnessKitSkillSettingsUpdate` | 读取或替换宿主技能库配置（仅内置 Harness）。 |
 | `listWorkspaces(includeArchived?)` / `validateWorkspace(workspaceId)` | `includeArchived`、工作区 ID | 查看或验证当前 App 可访问的工作区。 |
@@ -837,6 +838,46 @@ JSON 字段，方便透传后续 Harness 新增字段。如果当前引擎未实
 `getOperationalSnapshot()` 可能返回 HTTP `501`。宿主管理接口返回
 `harness_host_access_forbidden` 时不会触发 AppKit token 刷新。在 AgentOS Mobile WebView
 中，Native bridge 也需要支持 `/harnesskit/*`；未支持的 bridge 路由会以 `ApiError` 暴露。
+
+### 注册 App 私有工具
+
+外部 App 通过本机直接连接 Gateway 时，可以为自己的线程注册 OpenTool 函数。先在
+`127.0.0.1` 启动 HTTP 回调服务，注册时使用与该服务相同的 UUID 格式回调 token。
+这个 token 由 App 提供，与 AppKit token 分开使用。
+
+```ts
+// callbackToken 是本地回调服务配置的 token。
+const { toolId } = await sdk.harnesskit.registerPrivateTools('research-thread', {
+  endpoint: 'http://127.0.0.1:8123/',
+  token: callbackToken,
+  specification: {
+    opentool: '1.0.0',
+    info: { title: 'App tools', version: '1.0.0' },
+    functions: [{
+      name: 'list_assets',
+      description: 'List the app assets',
+      parameters: [],
+      return: { name: 'result', schema: { type: 'object' } }
+    }]
+  }
+});
+```
+
+`specification` 是 OpenTool JSON 文档，`OpenTool` 模型可通过 `toJson()` 转换。
+`endpoint` 必须是 `http://127.0.0.1:<port>/` 格式的根地址。回调服务需要接受
+`Authorization: Bearer <token>`，并提供以下接口。
+
+- `GET /private-tools/opentool/version` 用于健康检查，返回 HTTP `200`。
+- `POST /private-tools/opentool/call` 用于普通函数。JSON 请求包含
+  `jsonrpc: "2.0.0"`、`id`、`method` 和 `params`。响应返回 HTTP `200`，
+  JSON 中包含相同的 `jsonrpc`、`id`，以及 `result` 或 `error`。
+- `POST /private-tools/opentool/streamCall` 用于流式函数。返回 SSE 数据事件，
+  事件数据使用相同的 JSON 响应格式，最后发送 `DONE` 事件。
+
+返回的 `toolId` 标识该线程注册的工具。如果 Run 的 `toolPolicy.allowedToolIds`
+设置了允许列表，需要把它加入列表。同一线程再次注册会替换原有绑定。绑定保存在
+Harness 运行时，删除线程或回调服务连续未通过健康检查时会被移除。Harness 重启或
+绑定被移除后，需要重新注册。
 
 ### 为 Harness 指定 System One 决策模型
 

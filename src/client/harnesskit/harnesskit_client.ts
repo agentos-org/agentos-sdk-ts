@@ -7,6 +7,8 @@ import type {
   HarnessKitEvent,
   HarnessKitForkThreadRequest,
   HarnessKitOperationalSnapshot,
+  HarnessKitPrivateToolsRegistration,
+  HarnessKitPrivateToolsRegistrationResult,
   HarnessKitRunAccepted,
   HarnessKitRunRequest,
   HarnessKitRunResult,
@@ -141,6 +143,18 @@ export class HarnessKitClient {
   ): Promise<HarnessKitThreadDeleteResult> {
     return this.request(bearerToken, `/v1/threads/${encodeURIComponent(threadId)}`, {
       method: 'DELETE'
+    });
+  }
+
+  /** Registers or replaces a local app's OpenTool callback for its thread. */
+  registerPrivateTools(
+    bearerToken: string,
+    threadId: string,
+    registration: HarnessKitPrivateToolsRegistration
+  ): Promise<HarnessKitPrivateToolsRegistrationResult> {
+    return this.request(bearerToken, `/v1/threads/${encodeURIComponent(threadId)}/private-tools`, {
+      method: 'PUT',
+      data: registration
     });
   }
 

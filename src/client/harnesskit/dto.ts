@@ -168,6 +168,19 @@ export interface HarnessKitForkThreadRequest {
   title: string;
 }
 
+export interface HarnessKitPrivateToolsRegistration {
+  /** Local HTTP callback root with an explicit port, such as http://127.0.0.1:8123/. */
+  endpoint: string;
+  /** UUID-shaped bearer token accepted by the app's callback service. */
+  token: string;
+  /** OpenTool JSON document containing the functions exposed by the app. */
+  specification: HarnessKitJsonObject;
+}
+
+export interface HarnessKitPrivateToolsRegistrationResult {
+  toolId: string;
+}
+
 export interface HarnessKitWorkspaceContext {
   workspaceId: string;
   workspaceRevision?: number;

@@ -821,6 +821,7 @@ reconnect an interrupted stream automatically.
 | `getRuntime()` / `switchEngine(engine)` | `engine` | Reads the runtime engine or requests an engine switch. |
 | `listThreads()` / `getThread(threadId)` | `threadId` | Lists durable threads or reads one thread snapshot. |
 | `forkThread(request)` | `HarnessKitForkThreadRequest` | Forks an app-owned thread through an assistant turn. |
+| `registerPrivateTools(threadId, registration)` | `threadId`, `HarnessKitPrivateToolsRegistration` | Registers or replaces local app tools for a thread. |
 | `listSkills()` | none | Lists the available skill catalog. |
 | `getSkillSettings()` / `updateSkillSettings(settings)` | `HarnessKitSkillSettingsUpdate` | Reads or replaces the host skill library configuration (built-in Harness only). |
 | `listWorkspaces(includeArchived?)` / `validateWorkspace(workspaceId)` | `includeArchived`, workspace ID | Lists or validates workspaces available to the registered app. |
@@ -879,6 +880,51 @@ HTTP `501` when the configured engine does not expose the optional reader.
 A `harness_host_access_forbidden` host-only denial does not trigger an AppKit
 token refresh. In AgentOS Mobile WebViews, the native bridge must also support
 `/harnesskit/*`; unsupported bridge routes are surfaced as `ApiError`.
+
+### Register private app tools
+
+An external app connected directly to the local Gateway can register its
+OpenTool functions for its own thread. Start an HTTP callback service on
+`127.0.0.1` first, and use the same UUID-shaped callback token in that
+service and the registration. This token is separate from the AppKit token.
+
+```ts
+// callbackToken is the token configured on the app's local callback service.
+const { toolId } = await sdk.harnesskit.registerPrivateTools('research-thread', {
+  endpoint: 'http://127.0.0.1:8123/',
+  token: callbackToken,
+  specification: {
+    opentool: '1.0.0',
+    info: { title: 'App tools', version: '1.0.0' },
+    functions: [{
+      name: 'list_assets',
+      description: 'List the app assets',
+      parameters: [],
+      return: { name: 'result', schema: { type: 'object' } }
+    }]
+  }
+});
+```
+
+`specification` is an OpenTool JSON document. An `OpenTool` model can be
+converted with `toJson()`. The endpoint must be an `http://127.0.0.1:<port>/`
+root URL. The callback service must accept `Authorization: Bearer <token>`
+and provide:
+
+- `GET /private-tools/opentool/version` returning HTTP `200` for health checks.
+- `POST /private-tools/opentool/call` for regular functions. The JSON request
+  contains `jsonrpc: "2.0.0"`, `id`, `method` and `params`. Return a JSON
+  response with HTTP `200`, the same `jsonrpc` and `id`, and a `result`
+  or `error`.
+- `POST /private-tools/opentool/streamCall` for streaming functions. Return
+  SSE data events containing the same JSON response format and end the stream
+  with a `DONE` event.
+
+The returned `toolId` identifies the thread's registered tools. Include it in
+`toolPolicy.allowedToolIds` if a run uses an allow-list. Registering again for
+the same thread replaces its binding. Bindings are kept in the Harness runtime
+and are removed when the thread is deleted or the callback repeatedly fails
+health checks. Register again after a Harness restart or a removed binding.
 
 ### Select a System One Decision Model for Harness
 

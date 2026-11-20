@@ -69,6 +69,8 @@ import type {
   HarnessKitEvent,
   HarnessKitForkThreadRequest,
   HarnessKitOperationalSnapshot,
+  HarnessKitPrivateToolsRegistration,
+  HarnessKitPrivateToolsRegistrationResult,
   HarnessKitEventsOptions,
   HarnessKitRunAccepted,
   HarnessKitRunRequest,
@@ -485,7 +487,7 @@ export class AgentOSSDK {
         return true;
       }
       const text = collectErrorText(error.data).toLowerCase();
-      // HarnessKit uses this 403 for host-only controls, not an expired token.
+      // HarnessKit uses this code for access restrictions, including local-only registration.
       if (text.includes('harness_host_access_forbidden')) {
         return false;
       }
@@ -1071,6 +1073,16 @@ export class HarnessKitModule {
 
   deleteThread(threadId: string): Promise<HarnessKitThreadDeleteResult> {
     return this.client.withAppAuthRetry((token) => this.client.harnessKit.deleteThread(token, threadId));
+  }
+
+  /** Registers or replaces a local app's OpenTool callback for its thread. */
+  registerPrivateTools(
+    threadId: string,
+    registration: HarnessKitPrivateToolsRegistration
+  ): Promise<HarnessKitPrivateToolsRegistrationResult> {
+    return this.client.withAppAuthRetry((token) =>
+      this.client.harnessKit.registerPrivateTools(token, threadId, registration)
+    );
   }
 
   startRun(threadId: string, request: HarnessKitRunRequest): Promise<HarnessKitRunAccepted> {

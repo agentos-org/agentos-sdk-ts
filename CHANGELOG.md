@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## 2.5.2
 
+- feat(harnesskit): register an app's local OpenTool callback for a specific
+  thread with `registerPrivateTools()`.
 - feat: `ModelInfo` now reports `isBenefitCard`, `benefitCardId` and
   `benefitCardName` for the models a benefit card serves. A card model keeps
   `source: 'platform'` and its plain `name` / `alias`; the same model can be

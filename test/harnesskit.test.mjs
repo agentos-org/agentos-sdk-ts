@@ -6,6 +6,99 @@ const json = (value, status = 200) => new Response(JSON.stringify(value), {
   status, headers: { 'content-type': 'application/json' }
 });
 
+const privateToolsRegistration = {
+  endpoint: 'http://127.0.0.1:8123/',
+  token: '12345678-1234-1234-1234-123456789abc',
+  specification: {
+    opentool: '1.0.0',
+    info: { title: 'App tools', version: '1.0.0' },
+    functions: [{
+      name: 'list_assets',
+      description: 'List assets',
+      parameters: [],
+      return: { name: 'result', schema: { type: 'object' } }
+    }]
+  }
+};
+
+test('HarnessKit registers private tools using an encoded thread and the callback specification', async () => {
+  const client = new HarnessKitClient(new ApiClient({
+    baseUrl: 'http://example.test/base',
+    fetch: async (url, init) => {
+      assert.equal(new URL(url).pathname, '/base/harnesskit/v1/threads/thread%2Fa/private-tools');
+      assert.equal(init.method, 'PUT');
+      assert.equal(init.headers.authorization, 'Bearer app-token');
+      assert.deepEqual(JSON.parse(init.body), privateToolsRegistration);
+      return json({ toolId: 'app-private:abc123' });
+    }
+  }));
+  assert.deepEqual(
+    await client.registerPrivateTools('app-token', 'thread/a', privateToolsRegistration),
+    { toolId: 'app-private:abc123' }
+  );
+});
+
+test('private tool registration refreshes expired AppKit credentials while preserving the callback token', async () => {
+  let registrations = 0;
+  const attempts = [];
+  const sdk = new AgentOSSDK({ baseUrl: 'http://example.test', fetch: async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path === '/appkit/register') {
+      registrations++;
+      return json({ token: `app-token-${registrations}`, bundleId: 'com.test.app' });
+    }
+    assert.equal(path, '/harnesskit/v1/threads/thread/private-tools');
+    assert.equal(init.method, 'PUT');
+    attempts.push({ authorization: init.headers.authorization, body: JSON.parse(init.body) });
+    return attempts.length === 1
+      ? json({ error: { code: 'unauthorized' } }, 401)
+      : json({ toolId: 'app-private:abc123' });
+  }});
+  try {
+    await sdk.agentos.registerBundle({ bundleId: 'com.test.app' });
+    assert.deepEqual(
+      await sdk.harnesskit.registerPrivateTools('thread', privateToolsRegistration),
+      { toolId: 'app-private:abc123' }
+    );
+    assert.equal(registrations, 2);
+    assert.deepEqual(attempts.map((attempt) => attempt.authorization), [
+      'Bearer app-token-1', 'Bearer app-token-2'
+    ]);
+    assert.deepEqual(attempts.map((attempt) => attempt.body), [
+      privateToolsRegistration, privateToolsRegistration
+    ]);
+  } finally {
+    await sdk.dispose();
+  }
+});
+
+test('a private tool registration access denial does not refresh AppKit credentials', async () => {
+  let registrations = 0;
+  let attempts = 0;
+  const sdk = new AgentOSSDK({ baseUrl: 'http://example.test', fetch: async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path === '/appkit/register') {
+      registrations++;
+      return json({ token: 'app-token', bundleId: 'com.test.app' });
+    }
+    assert.equal(path, '/harnesskit/v1/threads/thread/private-tools');
+    assert.equal(init.method, 'PUT');
+    attempts++;
+    return json({ error: { code: 'harness_host_access_forbidden', message: 'access denied' } }, 403);
+  }});
+  try {
+    await sdk.agentos.registerBundle({ bundleId: 'com.test.app' });
+    await assert.rejects(
+      () => sdk.harnesskit.registerPrivateTools('thread', privateToolsRegistration),
+      (error) => error.status === 403
+    );
+    assert.equal(registrations, 1);
+    assert.equal(attempts, 1);
+  } finally {
+    await sdk.dispose();
+  }
+});
+
 test('HarnessKit sends typed skill, decision, fork and workspace requests with bearer authentication', async () => {
   const calls = [];
   const client = new HarnessKitClient(new ApiClient({

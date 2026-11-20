@@ -1,6 +1,8 @@
 import type {
   AgentOSSDK,
   HarnessKitDecisionModelConfig,
+  HarnessKitPrivateToolsRegistration,
+  HarnessKitPrivateToolsRegistrationResult,
   HarnessKitRunRequest,
   HarnessKitSkillSelection,
   HarnessKitSubagentModelSelectedEvent,
@@ -48,6 +50,27 @@ void sdk.harnesskit.createWorkspace({ folderPaths: ['/tmp/project'], name: 'Proj
 void sdk.harnesskit.updateWorkspace('workspace', { archived: true });
 void sdk.harnesskit.relinkWorkspace('workspace', '/tmp/project');
 void sdk.harnesskit.validateWorkspace('workspace');
+const privateTools: HarnessKitPrivateToolsRegistration = {
+  endpoint: 'http://127.0.0.1:8123/',
+  token: '12345678-1234-1234-1234-123456789abc',
+  specification: {
+    opentool: '1.0.0',
+    info: { title: 'App tools', version: '1.0.0' },
+    functions: [{ name: 'list_assets', description: 'List assets', parameters: [] }]
+  }
+};
+const binding: Promise<HarnessKitPrivateToolsRegistrationResult> =
+  sdk.harnesskit.registerPrivateTools('thread', privateTools);
+void binding.then((result) => {
+  const toolId: string = result.toolId;
+  void toolId;
+});
+// @ts-expect-error A callback token is required.
+const invalidPrivateTools: HarnessKitPrivateToolsRegistration = {
+  endpoint: 'http://127.0.0.1:8123/',
+  specification: {}
+};
+void invalidPrivateTools;
 void sdk.harnesskit.events('thread').then(async (events) => {
   for await (const event of events) {
     if (isHarnessKitSkillActivatedEvent(event)) {
