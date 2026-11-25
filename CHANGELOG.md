@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.0
+
+- breaking(discoverykit): discovery is now device-level. Remove `register()`
+  and `unregister()`, `PeerDevice.apps`, and `SelfInfo.registered`. Use
+  `getPeers()` and `streamPeers()` for nearby devices, and `getSelf()` for the
+  current device.
+- breaking(transferkit): send files using `targetDeviceId`. Remove
+  `targetBundleId` from send requests and `targetBundleId` and `userId` from
+  transfer sessions. Remove `respond()`, `receiveStream()`, `setPolicy()`,
+  `getPolicy()`, `getHistory()`, `deleteHistory()`, `clearHistory()`, and the
+  associated types. The receiving device handles incoming files in the built-in
+  nearby transfer UI. Apps can list, track, and cancel transfers they started.
+
 ## 2.5.2
 
 - feat(harnesskit): register an app's local OpenTool callback for a specific
