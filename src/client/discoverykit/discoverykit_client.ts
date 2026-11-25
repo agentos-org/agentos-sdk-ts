@@ -1,11 +1,4 @@
-import type {
-  DiscoveryRegisterRequest,
-  DiscoveryRegisterResponse,
-  DiscoveryUnregisterResponse,
-  PeerDevice,
-  PeerDeviceEvent,
-  SelfInfo,
-} from './dto';
+import type { PeerDevice, PeerDeviceEvent, SelfInfo } from './dto';
 import { ApiClient, parseSse } from '../../utils';
 
 export class DiscoveryKitClient {
@@ -34,22 +27,6 @@ export class DiscoveryKitClient {
   getSelf(bearerToken: string): Promise<SelfInfo> {
     return this.apiClient.request<SelfInfo>('/discoverykit/self', {
       headers: { authorization: `Bearer ${bearerToken}` },
-    });
-  }
-
-  register(bearerToken: string, request?: DiscoveryRegisterRequest): Promise<DiscoveryRegisterResponse> {
-    return this.apiClient.request<DiscoveryRegisterResponse>('/discoverykit/register', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${bearerToken}` },
-      data: request ?? {},
-    });
-  }
-
-  unregister(bearerToken: string): Promise<DiscoveryUnregisterResponse> {
-    return this.apiClient.request<DiscoveryUnregisterResponse>('/discoverykit/unregister', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${bearerToken}` },
-      data: {},
     });
   }
 }

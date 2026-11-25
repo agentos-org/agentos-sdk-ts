@@ -12,12 +12,12 @@ HarnessKit, CronKit, ModelKit, and ToolKit discovery endpoints. Use the unified
 - HarnessKit API: Harness runtime, thread, run, command, result, and SSE event access
 - AuthKit API: OAuth-like authorization flow, token exchange, user info, grant management
 - CronKit API: cron task CRUD, run history, and scheduler control
-- DiscoveryKit API: nearby device discovery, self info, device register/unregister, SSE peer events
+- DiscoveryKit API: device-level nearby device discovery, self info, SSE peer events
 - ModelKit API: task-oriented model listing, OpenAI-compatible chat /
   embedding / asr / tts clients under `/modelkit/*`, typed-question decision
   inference, and external app-model registration
 - ToolKit API: tool listing, tool definition loading, and tool lifecycle event subscription
-- TransferKit API: device-to-device file transfer (send/receive/progress stream/cancel/respond), receive policy, transfer history
+- TransferKit API: send files to nearby devices, transfer progress stream, cancel
 
 ## Getting Started
 
@@ -617,8 +617,9 @@ event's `data` contains `notificationId`, `eventType` and optional `subjectId`.
 
 ### DiscoveryKitModule (`sdk.discoverykit`)
 
-DiscoveryKit discovers nearby AgentOS devices, supporting device-level and
-app-level scans.
+DiscoveryKit discovers nearby AgentOS devices at the device level. Apps can
+query the devices in the local network and the current device's info; they are
+never advertised to other devices.
 
 **Peer Device Event Type Enum (`PeerDeviceEventType`):**
 
@@ -628,24 +629,13 @@ app-level scans.
 | `left` | Device went offline |
 | `updated` | Device info updated |
 
-**File Receive Policy Enum (`FileReceivePolicy`):**
-
-| Value | Description |
-| --- | --- |
-| `autoAccept` | Automatically accept incoming files |
-| `requireConfirm` | Require user confirmation |
-
 | Method | Parameters | Description |
 | --- | --- | --- |
-| `getPeers()` | none | Lists nearby peer devices. App-level scans only return devices with the same bundleId registered. |
+| `getPeers()` | none | Lists nearby peer devices (the current device is excluded). |
 | `streamPeers(signal?)` | `AbortSignal` | SSE subscription for device change events (`peer.joined` / `peer.left` / `peer.updated`). |
 | `getSelf()` | none | Gets self device info and nearbyTransfer status. |
-| `register(request?)` | `{ receivePolicy?: FileReceivePolicy }` | Registers the current app into discovery broadcast. |
-| `unregister()` | none | Unregisters the current app from discovery broadcast. |
 
 ```ts
-await sdk.discoverykit.register({ receivePolicy: 'autoAccept' });
-
 const peers = await sdk.discoverykit.getPeers();
 console.log('Nearby devices:', peers.length);
 
@@ -665,26 +655,15 @@ interface PeerDevice {
   host: string;
   port: number;
   online: boolean;
-  apps: PeerApp[];
-}
-```
-
-**PeerApp structure:**
-
-```ts
-interface PeerApp {
-  bundleId?: string;
-  userId?: string;
-  username?: string;
-  appName?: string;
-  avatarUrl?: string;
 }
 ```
 
 ### TransferKitModule (`sdk.transferkit`)
 
-TransferKit provides file transfer between AgentOS devices, including send,
-receive, progress tracking, cancellation, and transfer history management.
+TransferKit sends files to a nearby AgentOS device. The receiving device
+handles the incoming files in its built-in nearby transfer UI. Apps can send
+files and track or cancel their own transfers; they cannot receive files, set a
+receive policy or read the transfer history.
 
 **Transfer State Enum (`TransferState`):**
 
@@ -696,13 +675,6 @@ receive, progress tracking, cancellation, and transfer history management.
 | `completed` | Transfer completed |
 | `failed` | Transfer failed |
 | `cancelled` | Cancelled |
-
-**Transfer Direction Enum (`TransferDirection`):**
-
-| Value | Description |
-| --- | --- |
-| `send` | Sending |
-| `receive` | Receiving |
 
 **File Transfer State Enum (`FileTransferState`):**
 
@@ -716,17 +688,10 @@ receive, progress tracking, cancellation, and transfer history management.
 | Method | Parameters | Description |
 | --- | --- | --- |
 | `send(request)` | `TransferSendRequest` | Sends files to a target device, returns `TransferSession`. |
-| `listTransfers()` | none | Lists all transfer sessions for the current app. |
-| `getStatus(transferId)` | `transferId` | Gets a transfer session status. |
+| `listTransfers()` | none | Lists the transfer sessions started by the current app. |
+| `getStatus(transferId)` | `transferId` | Gets the status of a transfer started by the current app. |
 | `streamProgress(transferId, signal?)` | `transferId`, `AbortSignal` | SSE subscription for transfer progress; closes automatically on completion/failure. |
 | `cancel(transferId)` | `transferId` | Cancels an in-progress transfer. |
-| `respond(transferId, request)` | `transferId`, `{ accept: boolean }` | Accepts or declines an incoming transfer request. |
-| `receiveStream(signal?)` | `AbortSignal` | SSE subscription for incoming file transfer events (`file.received`). |
-| `setPolicy(request)` | `{ policy: string }` | Sets file receive policy (`autoAccept` / `requireConfirm`). |
-| `getPolicy()` | none | Gets current file receive policy. |
-| `getHistory(query?)` | `{ deviceId?: string; userId?: string }` | Gets transfer history records (newest first). |
-| `deleteHistory(recordId, query?)` | `recordId`, `HistoryQuery` | Deletes a single transfer history record. |
-| `clearHistory(query?)` | `HistoryQuery` | Clears all transfer history. |
 
 ```ts
 const peers = await sdk.discoverykit.getPeers();
@@ -758,41 +723,8 @@ interface TransferSession {
   progress: number;      // 0.0 ~ 1.0
   targetDeviceId: string;
   bundleId: string;
-  userId?: string;
-  targetBundleId?: string;
   files: TransferFileInfo[];
   errorMessage?: string;
-}
-```
-
-**IncomingTransferEvent structure:**
-
-```ts
-interface IncomingTransferEvent {
-  transferId: string;
-  fromDeviceId: string;
-  fromName: string;
-  sourceBundleId: string;
-  targetBundleId?: string;
-  autoAccepted: boolean;
-  files: ReceivedFileInfo[];
-}
-```
-
-**TransferHistoryRecord structure:**
-
-```ts
-interface TransferHistoryRecord {
-  id: string;
-  direction: TransferDirection; // 'send' | 'receive'
-  peerDeviceId: string;
-  peerName: string;
-  peerAvatarUrl?: string;
-  files: TransferHistoryFile[];
-  totalSize: number;
-  state: TransferState;
-  timestamp: string; // ISO 8601
-  savedDir?: string;
 }
 ```
 

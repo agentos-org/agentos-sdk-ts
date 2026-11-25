@@ -54,9 +54,6 @@ import type {
   RevokeRequest,
 } from '../authkit/dto';
 import type {
-  DiscoveryRegisterRequest,
-  DiscoveryRegisterResponse,
-  DiscoveryUnregisterResponse,
   PeerDevice,
   PeerDeviceEvent,
   SelfInfo,
@@ -88,12 +85,6 @@ import type {
   HarnessKitWorkspaceValidation
 } from '../harnesskit/dto';
 import type {
-  HistoryQuery,
-  IncomingTransferEvent,
-  PolicyResponse,
-  SetPolicyRequest,
-  TransferHistoryRecord,
-  TransferRespondRequest,
   TransferSendRequest,
   TransferSession,
 } from '../transferkit/dto';
@@ -987,14 +978,6 @@ export class DiscoveryKitModule {
   getSelf(): Promise<SelfInfo> {
     return this.client.withAppAuthRetry((token) => this.client.discoveryKit.getSelf(token));
   }
-
-  register(request?: DiscoveryRegisterRequest): Promise<DiscoveryRegisterResponse> {
-    return this.client.withAppAuthRetry((token) => this.client.discoveryKit.register(token, request));
-  }
-
-  unregister(): Promise<DiscoveryUnregisterResponse> {
-    return this.client.withAppAuthRetry((token) => this.client.discoveryKit.unregister(token));
-  }
 }
 
 export class NotifyKitModule {
@@ -1138,34 +1121,6 @@ export class TransferKitModule {
 
   cancel(transferId: string): Promise<{ status: string }> {
     return this.client.withAppAuthRetry((token) => this.client.transferKit.cancel(token, transferId));
-  }
-
-  respond(transferId: string, request: TransferRespondRequest): Promise<{ status: string }> {
-    return this.client.withAppAuthRetry((token) => this.client.transferKit.respond(token, transferId, request));
-  }
-
-  receiveStream(signal?: AbortSignal): Promise<AsyncGenerator<IncomingTransferEvent>> {
-    return this.client.withAppAuthRetry((token) => this.client.transferKit.receiveStream(token, signal));
-  }
-
-  setPolicy(request: SetPolicyRequest): Promise<PolicyResponse> {
-    return this.client.withAppAuthRetry((token) => this.client.transferKit.setPolicy(token, request));
-  }
-
-  getPolicy(): Promise<PolicyResponse> {
-    return this.client.withAppAuthRetry((token) => this.client.transferKit.getPolicy(token));
-  }
-
-  getHistory(query?: HistoryQuery): Promise<TransferHistoryRecord[]> {
-    return this.client.withAppAuthRetry((token) => this.client.transferKit.getHistory(token, query));
-  }
-
-  deleteHistory(recordId: string, query?: HistoryQuery): Promise<{ status: string }> {
-    return this.client.withAppAuthRetry((token) => this.client.transferKit.deleteHistory(token, recordId, query));
-  }
-
-  clearHistory(query?: HistoryQuery): Promise<{ status: string }> {
-    return this.client.withAppAuthRetry((token) => this.client.transferKit.clearHistory(token, query));
   }
 }
 

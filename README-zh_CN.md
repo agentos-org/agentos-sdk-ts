@@ -12,12 +12,12 @@ HarnessKit、CronKit、ModelKit 和 ToolKit 发现接口。推荐使用统一的
 - HarnessKit API：Harness 运行时、线程、Run、命令、结果和 SSE 事件
 - AuthKit API：OAuth 授权流、token 交换、用户信息获取、授权管理
 - CronKit API：定时任务 CRUD、运行记录与调度器控制
-- DiscoveryKit API：附近设备发现、自身信息获取、设备注册/注销、SSE 设备事件流
+- DiscoveryKit API：设备级附近设备发现、自身信息获取、SSE 设备事件流
 - ModelKit API：基于任务的模型列表，`/modelkit/*` 下的 OpenAI 兼容
   chat / embedding / asr / tts 客户端，带类型问题的 decision 推理，以及外部
   app model 注册
 - ToolKit API：tool 列表、tool 定义读取与 tool 生命周期事件订阅
-- TransferKit API：设备间文件传输（发送/接收/进度流/取消/应答）、接收策略、传输历史管理
+- TransferKit API：向附近设备发送文件、传输进度流、取消传输
 
 ## 快速开始
 
@@ -585,7 +585,8 @@ console.log(result.notification.id, result.notification.count);
 
 ### DiscoveryKitModule（`sdk.discoverykit`）
 
-DiscoveryKit 用于发现附近的 AgentOS 设备，支持设备级和 App 级扫描。
+DiscoveryKit 以设备级方式发现附近的 AgentOS 设备。App 可以查询局域网内的设备和当前设备的信息，
+不会被广播给其他设备。
 
 **设备事件类型枚举（`PeerDeviceEventType`）：**
 
@@ -595,29 +596,18 @@ DiscoveryKit 用于发现附近的 AgentOS 设备，支持设备级和 App 级�
 | `left` | 设备离线 |
 | `updated` | 设备信息更新 |
 
-**文件接收策略枚举（`FileReceivePolicy`）：**
-
-| 值 | 说明 |
-| --- | --- |
-| `autoAccept` | 自动接收文件 |
-| `requireConfirm` | 需要用户确认 |
-
 | 方法 | 参数 | 说明 |
 | --- | --- | --- |
-| `getPeers()` | 无 | 获取附近设备列表。App 级扫描只返回同 bundleId 注册的设备。 |
-| `streamPeers(signal?)` | `AbortSignal` | SSE 订阅设备变化事件（`peer.joined` / `peer.left` / `peer.updated`）。 |
-| `getSelf()` | 无 | 获取自身设备信息及 nearbyTransfer 状态。 |
-| `register(request?)` | `{ receivePolicy?: FileReceivePolicy }` | 将当前 App 注册到设备发现广播中。 |
-| `unregister()` | 无 | 从设备发现广播中注销当前 App。 |
+| `getPeers()` | 无 | 列出附近的设备（不含当前设备）。 |
+| `streamPeers(signal?)` | `AbortSignal` | 通过 SSE 订阅设备变化事件（`peer.joined` / `peer.left` / `peer.updated`）。 |
+| `getSelf()` | 无 | 获取当前设备信息及 nearbyTransfer 状态。 |
 
 ```ts
-await sdk.discoverykit.register({ receivePolicy: 'autoAccept' });
-
 const peers = await sdk.discoverykit.getPeers();
-console.log('Nearby devices:', peers.length);
+console.log('附近设备数:', peers.length);
 
 const self = await sdk.discoverykit.getSelf();
-console.log('Transfer enabled:', self.nearbyTransferEnabled);
+console.log('传输已启用:', self.nearbyTransferEnabled);
 ```
 
 **PeerDevice 结构：**
@@ -632,26 +622,13 @@ interface PeerDevice {
   host: string;
   port: number;
   online: boolean;
-  apps: PeerApp[];
-}
-```
-
-**PeerApp 结构：**
-
-```ts
-interface PeerApp {
-  bundleId?: string;
-  userId?: string;
-  username?: string;
-  appName?: string;
-  avatarUrl?: string;
 }
 ```
 
 ### TransferKitModule（`sdk.transferkit`）
 
-TransferKit 提供 AgentOS 设备之间的文件传输能力，包括发送、接收、进度追踪、
-取消和传输历史管理。
+TransferKit 向附近的 AgentOS 设备发送文件，接收设备在其内置的附近传输界面中处理收到的文件。
+App 可以发送文件并跟踪或取消自己发起的传输；不能接收文件、设置接收策略或读取传输历史。
 
 **传输状态枚举（`TransferState`）：**
 
@@ -664,36 +641,22 @@ TransferKit 提供 AgentOS 设备之间的文件传输能力，包括发送、�
 | `failed` | 传输失败 |
 | `cancelled` | 已取消 |
 
-**传输方向枚举（`TransferDirection`）：**
+**文件传输状态枚举（`FileTransferState`）：**
 
 | 值 | 说明 |
 | --- | --- |
-| `send` | 发送 |
-| `receive` | 接收 |
-
-**单文件传输状态枚举（`FileTransferState`）：**
-
-| 值 | 说明 |
-| --- | --- |
-| `pending` | 等待 |
+| `pending` | 等待中 |
 | `transferring` | 传输中 |
-| `completed` | 完成 |
+| `completed` | 已完成 |
 | `failed` | 失败 |
 
 | 方法 | 参数 | 说明 |
 | --- | --- | --- |
 | `send(request)` | `TransferSendRequest` | 向目标设备发送文件，返回 `TransferSession`。 |
-| `listTransfers()` | 无 | 列出当前 App 的所有传输会话。 |
-| `getStatus(transferId)` | `transferId` | 获取传输会话状态。 |
-| `streamProgress(transferId, signal?)` | `transferId`、`AbortSignal` | SSE 订阅传输进度，完成或失败后自动结束。 |
-| `cancel(transferId)` | `transferId` | 取消一个进行中的传输。 |
-| `respond(transferId, request)` | `transferId`、`{ accept: boolean }` | 对收到的传输请求进行接受/拒绝应答。 |
-| `receiveStream(signal?)` | `AbortSignal` | SSE 订阅入站文件传输事件（`file.received`）。 |
-| `setPolicy(request)` | `{ policy: string }` | 设置文件接收策略（`autoAccept` / `requireConfirm`）。 |
-| `getPolicy()` | 无 | 获取当前文件接收策略。 |
-| `getHistory(query?)` | `{ deviceId?: string; userId?: string }` | 获取传输历史记录列表（最新在前）。 |
-| `deleteHistory(recordId, query?)` | `recordId`、`HistoryQuery` | 删除单条传输历史记录。 |
-| `clearHistory(query?)` | `HistoryQuery` | 清空传输历史。 |
+| `listTransfers()` | 无 | 列出当前 App 发起的传输会话。 |
+| `getStatus(transferId)` | `transferId` | 获取当前 App 发起的传输会话状态。 |
+| `streamProgress(transferId, signal?)` | `transferId`、`AbortSignal` | 通过 SSE 订阅传输进度，完成/失败时自动关闭。 |
+| `cancel(transferId)` | `transferId` | 取消进行中的传输。 |
 
 ```ts
 const peers = await sdk.discoverykit.getPeers();
@@ -705,13 +668,13 @@ const session = await sdk.transferkit.send({
     { fileName: 'doc.pdf', size: 1024000, filePath: '/data/doc.pdf' }
   ]
 });
-console.log('Transfer ID:', session.transferId);
-console.log('State:', session.state);
+console.log('传输 ID:', session.transferId);
+console.log('状态:', session.state);
 
-// 流式追踪进度
+// 订阅进度
 const progress = await sdk.transferkit.streamProgress(session.transferId);
 for await (const update of progress) {
-  console.log(`Progress: ${(update.progress * 100).toFixed(1)}%`);
+  console.log(`进度: ${(update.progress * 100).toFixed(1)}%`);
   if (update.state === 'completed' || update.state === 'failed') break;
 }
 ```
@@ -725,41 +688,8 @@ interface TransferSession {
   progress: number;      // 0.0 ~ 1.0
   targetDeviceId: string;
   bundleId: string;
-  userId?: string;
-  targetBundleId?: string;
   files: TransferFileInfo[];
   errorMessage?: string;
-}
-```
-
-**IncomingTransferEvent 结构：**
-
-```ts
-interface IncomingTransferEvent {
-  transferId: string;
-  fromDeviceId: string;
-  fromName: string;
-  sourceBundleId: string;
-  targetBundleId?: string;
-  autoAccepted: boolean;
-  files: ReceivedFileInfo[];
-}
-```
-
-**TransferHistoryRecord 结构：**
-
-```ts
-interface TransferHistoryRecord {
-  id: string;
-  direction: TransferDirection; // 'send' | 'receive'
-  peerDeviceId: string;
-  peerName: string;
-  peerAvatarUrl?: string;
-  files: TransferHistoryFile[];
-  totalSize: number;
-  state: TransferState;
-  timestamp: string; // ISO 8601
-  savedDir?: string;
 }
 ```
 

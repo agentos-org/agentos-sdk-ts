@@ -1,14 +1,4 @@
 /**
- * File receive policy for incoming transfers.
- *
- * Values: `autoAccept` | `requireConfirm`
- */
-export enum FileReceivePolicy {
-  autoAccept = 'autoAccept',
-  requireConfirm = 'requireConfirm',
-}
-
-/**
  * Peer device event types emitted in the discovery SSE stream.
  *
  * Values: `joined` | `left` | `updated`
@@ -19,16 +9,7 @@ export enum PeerDeviceEventType {
   updated = 'updated',
 }
 
-/** A registered app on a peer device, discovered via multicast. */
-export interface PeerApp {
-  bundleId?: string;
-  userId?: string;
-  username?: string;
-  appName?: string;
-  avatarUrl?: string;
-}
-
-/** Nearby peer device information. */
+/** Nearby peer device information (device-level). */
 export interface PeerDevice {
   deviceId: string;
   name: string;
@@ -38,7 +19,6 @@ export interface PeerDevice {
   host: string;
   port: number;
   online: boolean;
-  apps: PeerApp[];
 }
 
 /** Peer device change event from the SSE stream. */
@@ -47,25 +27,7 @@ export interface PeerDeviceEvent {
   device: PeerDevice;
 }
 
-/** Self device info with additional status fields. */
+/** Info of the current device, with the nearby transfer switch state. */
 export interface SelfInfo extends PeerDevice {
   nearbyTransferEnabled: boolean;
-  registered: boolean;
-}
-
-/** Payload sent to POST /discoverykit/register */
-export interface DiscoveryRegisterRequest {
-  receivePolicy?: FileReceivePolicy;
-}
-
-/** Response from POST /discoverykit/register */
-export interface DiscoveryRegisterResponse {
-  status: string;
-  bundleId: string;
-}
-
-/** Response from POST /discoverykit/unregister */
-export interface DiscoveryUnregisterResponse {
-  status: string;
-  bundleId: string;
 }
